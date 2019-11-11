@@ -1,0 +1,4 @@
+#!/bin/bash
+shell-quote ar "$@" >> "${OPLIST:-/tmp/operations.log}"
+ar "$@"
+

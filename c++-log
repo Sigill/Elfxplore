@@ -1,0 +1,3 @@
+#!/bin/bash
+shell-quote c++ "$@" >> "${OPLIST:-/tmp/operations.log}"
+c++ "$@"
