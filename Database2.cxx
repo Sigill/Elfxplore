@@ -1,12 +1,15 @@
 #include "Database2.hxx"
 
+#include <iostream>
+#include <cxxabi.h>
+
 #define LAZYSTM(stm) [this]{ return new SQLite::Statement(db, stm); }
 
 Database2::Database2(const std::string& file)
   : db(file, SQLite::OPEN_CREATE | SQLite::OPEN_READWRITE)
   , create_artifact_stm(LAZYSTM("insert into artifacts (name, type) values (?, ?)"))
   , artifact_id_by_name_stm(LAZYSTM("select id from artifacts where name = ?"))
-  , create_symbol_stm(LAZYSTM("insert into symbols (name) values (?)"))
+  , create_symbol_stm(LAZYSTM("insert into symbols (name, dname) values (?, ?)"))
   , symbol_id_by_name_stm(LAZYSTM("select id from symbols where name = ?"))
   , create_symbol_reference_stm(LAZYSTM("insert into symbol_references (artifact_id, symbol_id, category, type, size) values (?, ?, ?, ?, ?)"))
   , create_dependency_stm(LAZYSTM("insert into dependencies (dependee_id, dependency_id) values (?, ?)"))
@@ -36,9 +39,11 @@ create unique index "unique_dependency" on "dependencies" ("dependee_id", "depen
 
 create table if not exists "symbols" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  "name" TEXT NOT NULL
+  "name" TEXT NOT NULL,
+  "dname" TEXT NOT NULL
 );
-create unique index "unique_symbols" on "symbols" ("name");
+create unique index "unique_symbol" on "symbols" ("name");
+create index "symbol_by_dname" on "symbols" ("dname");
 
 create table if not exists "symbol_references" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -90,12 +95,23 @@ int Database2::artifact_id_by_name(const std::string& name) {
 }
 
 void Database2::create_symbol(const std::string& name) {
+  int status;
+  char* dname = abi::__cxa_demangle(name.c_str(), 0, 0, &status);
+
   auto& stm = *create_symbol_stm;
 
   stm.bind(1, name);
+  if (status == 0)
+    stm.bind(2, dname);
+  else if (status == -2)
+    stm.bind(2, name);
+  else
+    std::cerr << "Unable to demangle (" << status << "): " << name << std::endl;
   stm.exec();
   stm.reset();
   stm.clearBindings();
+
+  free(dname);
 }
 
 int Database2::symbol_id_by_name(const std::string& name) {
