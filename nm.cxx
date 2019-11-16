@@ -20,9 +20,19 @@ SymbolSet nm(const std::string& file, const std::string& options) {
   std::smatch nm_match;
   while (pipe_stream && std::getline(pipe_stream, line) && !line.empty()) {
     if (std::regex_match(line, nm_match, symbol_regex)) {
+      std::string name = nm_match[3];
+
+      // Filter-out:
+      // .LC??
+      // _GLOBAL__sub_I_*.cpp
+      // symbol [clone .cold]
+      // DW.ref.__gxx_personality_v0
+      if (name[0] == '.' // There's a lot of .LC??
+          || name.rfind('.') != std::string::npos)
+      continue;
 
       long long sz = (nm_match[1].length() == 0) ? -1 : std::stoll(nm_match[1], nullptr, 16);
-      symbols.emplace(nm_match[3], nm_match[2], sz);
+      symbols.emplace(std::move(name), nm_match[2], sz);
     }
   }
 

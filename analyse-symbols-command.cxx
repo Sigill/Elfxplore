@@ -29,9 +29,9 @@ void process_artifact(Database2& db, const std::string& logical_path, const bfs:
 
   ArtifactSymbols symbols;
 
-//    std::future<SymbolSet> f1 = std::async(std::launch::async, [&file]{ return nm_undefined(usable_path.string()); });
-//    std::future<SymbolSet> f2 = std::async(std::launch::async, [&file]{ return nm_defined_extern(usable_path.string()); });
-//    std::future<SymbolSet> f3 = std::async(std::launch::async, [&file]{ return nm_defined(usable_path.string()); });
+//    std::future<SymbolSet> f1 = std::async(std::launch::async, [&usable_path]{ return nm_undefined(usable_path.string()); });
+//    std::future<SymbolSet> f2 = std::async(std::launch::async, [&usable_path]{ return nm_defined_extern(usable_path.string()); });
+//    std::future<SymbolSet> f3 = std::async(std::launch::async, [&usable_path]{ return nm_defined(usable_path.string()); });
 
 //    f1.wait(), f2.wait(), f3.wait();
 

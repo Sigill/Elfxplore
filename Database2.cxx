@@ -103,10 +103,8 @@ void Database2::create_symbol(const std::string& name) {
   stm.bind(1, name);
   if (status == 0)
     stm.bind(2, dname);
-  else if (status == -2)
-    stm.bind(2, name);
   else
-    std::cerr << "Unable to demangle (" << status << "): " << name << std::endl;
+    stm.bind(2, "");
   stm.exec();
   stm.reset();
   stm.clearBindings();
