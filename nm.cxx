@@ -5,9 +5,7 @@
 
 namespace bp = boost::process;
 
-SymbolSet nm(const std::string& file, const std::string& options) {
-  SymbolSet symbols;
-
+void nm(const std::string& file, SymbolSet& symbols, const std::string& options) {
 //  const std::regex symbol_regex("^.{16}(?: (.{16}))? (.) (.*$)");
 
   const std::string cmd = "nm " + options + " \"" + file + "\"";
@@ -52,16 +50,32 @@ SymbolSet nm(const std::string& file, const std::string& options) {
   }
 
   c.wait();
+}
 
+SymbolSet nm(const std::string& file, const std::string& options) {
+  SymbolSet symbols;
+  nm(file, symbols, options);
   return symbols;
+}
+
+void nm_undefined(const std::string& file, SymbolSet& symbols) {
+  nm(file, symbols, "--undefined-only");
 }
 
 SymbolSet nm_undefined(const std::string& file) {
   return nm(file, "--undefined-only");
 }
 
+void nm_defined(const std::string& file, SymbolSet& symbols) {
+  nm(file, symbols, "-S --defined-only");
+}
+
 SymbolSet nm_defined(const std::string& file) {
   return nm(file, "-S --defined-only");
+}
+
+void nm_defined_extern(const std::string& file, SymbolSet& symbols) {
+  nm(file, symbols, "-S --defined-only --extern-only");
 }
 
 SymbolSet nm_defined_extern(const std::string& file) {

@@ -2,7 +2,6 @@
 
 #include <iostream>
 #include <future>
-#include <regex>
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
@@ -16,7 +15,23 @@ namespace bfs = boost::filesystem;
 
 namespace {
 
-void process_artifact(Database2& db, const std::string& logical_path, const bfs::path& prefix) {
+void extract_symbols(const std::string& usable_path, ArtifactSymbols& symbols) {
+//  nm_undefined(usable_path, symbols.undefined);
+//  nm_defined_extern(usable_path, symbols.external);
+//  nm_defined(usable_path, symbols.internal);
+
+  std::future<void> f2 = std::async(std::launch::async, [&usable_path, &external_set=symbols.external]{ nm_defined_extern(usable_path, external_set); });
+  std::future<void> f3 = std::async(std::launch::async, [&usable_path, &internal_set=symbols.internal]{ nm_defined(usable_path, internal_set); });
+  std::future<void> f1 = std::async(std::launch::async, [&usable_path, &undefined_set=symbols.undefined]{ nm_undefined(usable_path, undefined_set); });
+
+  f2.wait(); f3.wait();
+
+  substract_set(symbols.internal, symbols.external);
+
+  f1.wait();
+}
+
+void process_artifact(Database2& db, const std::string& logical_path, const bfs::path& prefix, ArtifactSymbols& symbols) {
   const bfs::path usable_path = prefix.empty() ? logical_path : (prefix / logical_path);
 
   long long artifact_id = db.artifact_id_by_name(logical_path);
@@ -27,31 +42,25 @@ void process_artifact(Database2& db, const std::string& logical_path, const bfs:
 
   std::cout << artifact_id << " " << logical_path << std::endl;
 
-  ArtifactSymbols symbols;
-
-//    std::future<SymbolSet> f1 = std::async(std::launch::async, [&usable_path]{ return nm_undefined(usable_path.string()); });
-//    std::future<SymbolSet> f2 = std::async(std::launch::async, [&usable_path]{ return nm_defined_extern(usable_path.string()); });
-//    std::future<SymbolSet> f3 = std::async(std::launch::async, [&usable_path]{ return nm_defined(usable_path.string()); });
-
-//    f1.wait(), f2.wait(), f3.wait();
-
-//    symbols.undefined = f1.get();
-//    symbols.external = f2.get();
-//    symbols.internal = f3.get();
-
-  symbols.undefined = nm_undefined(usable_path.string());
-  symbols.external = nm_defined_extern(usable_path.string());
-  symbols.internal = nm_defined(usable_path.string());
-
-  substract_set(symbols.internal, symbols.external);
+  extract_symbols(usable_path.string(), symbols);
 
   db.insert_symbol_references(artifact_id, symbols);
 }
 
+void process_artifact(Database2& db, const std::string& logical_path, const bfs::path& prefix) {
+  ArtifactSymbols symbols;
+  process_artifact(db, logical_path, prefix, symbols);
+}
+
 void process_artifacts(Database2& db, std::istream& in, const bfs::path& prefix) {
+  ArtifactSymbols symbols;
+
   std::string line;
   while (std::getline(in, line) && !line.empty()) {
-    process_artifact(db, line, prefix);
+    symbols.undefined.clear();
+    symbols.external.clear();
+    symbols.internal.clear();
+    process_artifact(db, line, prefix, symbols);
   }
 }
 
