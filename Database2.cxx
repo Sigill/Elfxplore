@@ -119,13 +119,13 @@ int Database2::symbol_id_by_name(const std::string& name) {
   return get_id(stm);
 }
 
-void Database2::create_symbol_reference(long long artifact_id, long long symbol_id, const char* category, const std::string& type, long long size) {
+void Database2::create_symbol_reference(long long artifact_id, long long symbol_id, const char* category, const char type, long long size) {
   auto& stm = *create_symbol_reference_stm;
 
   stm.bind(1, artifact_id);
   stm.bind(2, symbol_id);
   stm.bind(3, category);
-  stm.bind(4, type);
+  stm.bind(4, &type, 1);
   stm.bind(5, size);
 
   stm.exec();
@@ -133,8 +133,8 @@ void Database2::create_symbol_reference(long long artifact_id, long long symbol_
   stm.clearBindings();
 }
 
-void Database2::insert_symbol_references(long long artifact_id, const SymbolSet& symbols, const char* category) {
-  for(const Symbol& symbol : symbols) {
+void Database2::insert_symbol_references(long long artifact_id, const SymbolReferenceSet& symbols, const char* category) {
+  for(const SymbolReference& symbol : symbols) {
     long long symbol_id = symbol_id_by_name(symbol.name);
     if (symbol_id == -1) {
       create_symbol(symbol.name);

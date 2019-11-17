@@ -10,8 +10,8 @@ find_package(SQLiteCpp REQUIRED)
 find_package(OpenMP REQUIRED)
 
 add_executable(elfxplore
-    Symbol.cxx
-    SymbolSet.cxx
+    SymbolReference.cxx
+    SymbolReferenceSet.cxx
     nm.cxx
     Database2.cxx
     utils.cxx

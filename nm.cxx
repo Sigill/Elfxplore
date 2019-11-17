@@ -5,7 +5,7 @@
 
 namespace bp = boost::process;
 
-void nm(const std::string& file, SymbolSet& symbols, const std::string& options) {
+void nm(const std::string& file, SymbolReferenceSet& symbols, const std::string& options) {
 //  const std::regex symbol_regex("^.{16}(?: (.{16}))? (.) (.*$)");
 
   const std::string cmd = "nm " + options + " \"" + file + "\"";
@@ -35,7 +35,7 @@ void nm(const std::string& file, SymbolSet& symbols, const std::string& options)
         || memrchr(&(line[offset + 2]), '.', line.length() - offset - 2) != NULL)
       continue;
 
-    symbols.emplace(std::string(line, offset + 2), std::string(line, offset, 1), sz);
+    symbols.emplace(std::string(line, offset + 2), line[offset], sz);
 
 //    if (std::regex_match(line, nm_match, symbol_regex)) {
 //      std::string name = nm_match[3];
@@ -52,32 +52,32 @@ void nm(const std::string& file, SymbolSet& symbols, const std::string& options)
   c.wait();
 }
 
-SymbolSet nm(const std::string& file, const std::string& options) {
-  SymbolSet symbols;
+SymbolReferenceSet nm(const std::string& file, const std::string& options) {
+  SymbolReferenceSet symbols;
   nm(file, symbols, options);
   return symbols;
 }
 
-void nm_undefined(const std::string& file, SymbolSet& symbols) {
+void nm_undefined(const std::string& file, SymbolReferenceSet& symbols) {
   nm(file, symbols, "--undefined-only");
 }
 
-SymbolSet nm_undefined(const std::string& file) {
+SymbolReferenceSet nm_undefined(const std::string& file) {
   return nm(file, "--undefined-only");
 }
 
-void nm_defined(const std::string& file, SymbolSet& symbols) {
+void nm_defined(const std::string& file, SymbolReferenceSet& symbols) {
   nm(file, symbols, "-S --defined-only");
 }
 
-SymbolSet nm_defined(const std::string& file) {
+SymbolReferenceSet nm_defined(const std::string& file) {
   return nm(file, "-S --defined-only");
 }
 
-void nm_defined_extern(const std::string& file, SymbolSet& symbols) {
+void nm_defined_extern(const std::string& file, SymbolReferenceSet& symbols) {
   nm(file, symbols, "-S --defined-only --extern-only");
 }
 
-SymbolSet nm_defined_extern(const std::string& file) {
+SymbolReferenceSet nm_defined_extern(const std::string& file) {
   return nm(file, "-S --defined-only --extern-only");
 }

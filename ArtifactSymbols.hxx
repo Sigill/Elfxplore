@@ -1,10 +1,10 @@
 #ifndef ARTIFACTS_SYMBOL_HXX
 #define ARTIFACTS_SYMBOL_HXX
 
-#include "SymbolSet.hxx"
+#include "SymbolReferenceSet.hxx"
 
 struct ArtifactSymbols {
-  SymbolSet undefined, external, internal;
+  SymbolReferenceSet undefined, external, internal;
 };
 
 #endif /* ARTIFACTS_SYMBOL_HXX */

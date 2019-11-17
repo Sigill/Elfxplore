@@ -1,14 +1,13 @@
-#include "Symbol.hxx"
+#include "SymbolReference.hxx"
 
-bool SymbolCmp::operator()(const Symbol& lhs, const Symbol& rhs) const {
+bool SymbolReferenceCmp::operator()(const SymbolReference& lhs, const SymbolReference& rhs) const {
   int c1 = lhs.name.compare(rhs.name);
   if (c1 < 0) {
     return true;
   } else if (c1 == 0) {
-    int c2 = lhs.type.compare(rhs.type);
-    if (c2 < 0) {
+    if (lhs.type < rhs.type) {
       return true;
-    } else if (c2 == 0) {
+    } else if (lhs.type == rhs.type) {
       return lhs.size < rhs.size;
     } else {
       return false;

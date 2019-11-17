@@ -1,7 +1,7 @@
 #ifndef DATABASE2_HXX
 #define DATABASE2_HXX
 
-#include "Symbol.hxx"
+#include "SymbolReference.hxx"
 #include "ArtifactSymbols.hxx"
 #include <SQLiteCpp/SQLiteCpp.h>
 #include <functional>
@@ -56,9 +56,9 @@ public:
 
   int symbol_id_by_name(const std::string& name);
 
-  void create_symbol_reference(long long artifact_id, long long symbol_id, const char* category, const std::string& type, long long size);
+  void create_symbol_reference(long long artifact_id, long long symbol_id, const char* category, const char type, long long size);
 
-  void insert_symbol_references(long long artifact_id, const SymbolSet& symbols, const char* category);
+  void insert_symbol_references(long long artifact_id, const SymbolReferenceSet& symbols, const char* category);
 
   void insert_symbol_references(long long artifact_id, const ArtifactSymbols& symbols);
 
