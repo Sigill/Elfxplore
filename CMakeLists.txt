@@ -7,6 +7,7 @@ find_package(Threads REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system program_options filesystem)
 find_package(SQLite3 REQUIRED)
 find_package(SQLiteCpp REQUIRED)
+find_package(OpenMP REQUIRED)
 
 add_executable(elfxplore
     Symbol.cxx
@@ -18,4 +19,4 @@ add_executable(elfxplore
     analyse-symbols-command.cxx
     analyse-dependencies-command.cxx
     elfxplore.cxx)
-target_link_libraries(elfxplore Boost::system Boost::program_options Boost::filesystem Threads::Threads SQLite::SQLite3 SQLiteCpp)
+target_link_libraries(elfxplore Boost::system Boost::program_options Boost::filesystem Threads::Threads SQLite::SQLite3 SQLiteCpp OpenMP::OpenMP_CXX)

@@ -16,24 +16,22 @@ namespace bfs = boost::filesystem;
 namespace {
 
 void extract_symbols(const std::string& usable_path, ArtifactSymbols& symbols) {
-//  nm_undefined(usable_path, symbols.undefined);
-//  nm_defined_extern(usable_path, symbols.external);
-//  nm_defined(usable_path, symbols.internal);
+  nm_undefined(usable_path, symbols.undefined);
+  nm_defined_extern(usable_path, symbols.external);
+  nm_defined(usable_path, symbols.internal);
 
-  std::future<void> f2 = std::async(std::launch::async, [&usable_path, &external_set=symbols.external]{ nm_defined_extern(usable_path, external_set); });
-  std::future<void> f3 = std::async(std::launch::async, [&usable_path, &internal_set=symbols.internal]{ nm_defined(usable_path, internal_set); });
-  std::future<void> f1 = std::async(std::launch::async, [&usable_path, &undefined_set=symbols.undefined]{ nm_undefined(usable_path, undefined_set); });
+//  std::future<void> f2 = std::async(std::launch::async, [&usable_path, &external_set=symbols.external]{ nm_defined_extern(usable_path, external_set); });
+//  std::future<void> f3 = std::async(std::launch::async, [&usable_path, &internal_set=symbols.internal]{ nm_defined(usable_path, internal_set); });
+//  std::future<void> f1 = std::async(std::launch::async, [&usable_path, &undefined_set=symbols.undefined]{ nm_undefined(usable_path, undefined_set); });
 
-  f2.wait(); f3.wait();
+//  f2.wait(); f3.wait();
 
   substract_set(symbols.internal, symbols.external);
 
-  f1.wait();
+//  f1.wait();
 }
 
-void process_artifact(Database2& db, const std::string& logical_path, const bfs::path& prefix, ArtifactSymbols& symbols) {
-  const bfs::path usable_path = prefix.empty() ? logical_path : (prefix / logical_path);
-
+void insert_symbols(Database2& db, const std::string& logical_path, ArtifactSymbols& symbols) {
   long long artifact_id = db.artifact_id_by_name(logical_path);
   if (artifact_id == -1) {
     db.create_artifact(logical_path, output_type(logical_path));
@@ -42,9 +40,15 @@ void process_artifact(Database2& db, const std::string& logical_path, const bfs:
 
   std::cout << artifact_id << " " << logical_path << std::endl;
 
-  extract_symbols(usable_path.string(), symbols);
-
   db.insert_symbol_references(artifact_id, symbols);
+}
+
+void process_artifact(Database2& db, const std::string& logical_path, const bfs::path& prefix, ArtifactSymbols& symbols) {
+  const bfs::path usable_path = prefix.empty() ? logical_path : (prefix / logical_path);
+
+  extract_symbols(logical_path, symbols);
+
+  insert_symbols(db, logical_path, symbols);
 }
 
 void process_artifact(Database2& db, const std::string& logical_path, const bfs::path& prefix) {
@@ -53,14 +57,34 @@ void process_artifact(Database2& db, const std::string& logical_path, const bfs:
 }
 
 void process_artifacts(Database2& db, std::istream& in, const bfs::path& prefix) {
-  ArtifactSymbols symbols;
+  constexpr size_t N = 512;
 
   std::string line;
+  std::vector<std::vector<std::string>> chunks; chunks.emplace_back();
   while (std::getline(in, line) && !line.empty()) {
-    symbols.undefined.clear();
-    symbols.external.clear();
-    symbols.internal.clear();
-    process_artifact(db, line, prefix, symbols);
+    if (chunks.back().size() == N)
+      chunks.emplace_back();
+
+    chunks.back().push_back(line);
+  }
+
+  std::vector<ArtifactSymbols> symbols(N);
+  for(const std::vector<std::string>& chunk : chunks) {
+#pragma omp parallel for
+    for(size_t i = 0; i < chunk.size(); ++i) {
+      symbols[i].undefined.clear();
+      symbols[i].external.clear();
+      symbols[i].internal.clear();
+
+      const std::string& logical_path = chunk[i];
+      const bfs::path usable_path = prefix.empty() ? logical_path : (prefix / logical_path);
+
+      extract_symbols(usable_path.string(), symbols[i]);
+    }
+
+    for(size_t i = 0; i < chunk.size(); ++i) {
+      insert_symbols(db, chunk[i], symbols[i]);
+    }
   }
 }
 
