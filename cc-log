@@ -1,4 +1,4 @@
 #!/bin/bash
-shell-quote cc "$@" >> "${OPLIST:-/tmp/operations.log}"
+shell-quote "$PWD" cc "$@" >> "${OPLIST:-/tmp/operations.log}"
 cc "$@"
 

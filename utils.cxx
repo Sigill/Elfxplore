@@ -2,6 +2,8 @@
 
 #include <regex>
 
+#include <wordexp.h>
+
 namespace {
 
 std::regex so_regex(R"(.*\.so(?:\.\d+)*$)");
@@ -24,19 +26,13 @@ bool ends_with(const std::string& str, const std::string& suffix) {
   }
 }
 
-std::string expand_path(const std::string& in) {
-  if (in.empty()) return in;
+std::string expand_path(const std::string& in, const boost::filesystem::path& base) {
+  wordexp_t wx;
+  wordexp(in.c_str(), &wx, 0);
+  std::string out(wx.we_wordv[0]);
+  wordfree(&wx);
 
-  if (in[0] == '~') {
-    const char* home = getenv("HOME");
-    if (home == nullptr) {
-      throw std::invalid_argument("error: HOME environment variable not defined.");
-    }
-
-    return (boost::filesystem::path(home) / in.substr(1)).string();
-  } else {
-    return in;
-  }
+  return boost::filesystem::canonical(out, base).string();
 }
 
 const char* library_type(const std::string& value) {

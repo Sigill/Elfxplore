@@ -14,6 +14,10 @@ __Purpose__: list the dependencies between source files, object files, librairie
 
 The first step is to generate a list of all the compilation operations: calls to a compiler, linker or archiver.
 
+Note: The first item of each line must be the working directory corresponding to that call. E.g.:
+
+`/some/directory gcc -o obj.o -c ...`
+
 The `cc-log`, `c++-log`, `ar-log` scripts are wrappers for those tools that will dump the executed command to the file referenced by the `OPLIST` environment variable (default: */tmp/operations.log*).
 
 Note: Those wrappers use the `shell-quote` tool (usually provided by the *libstring-shellquote-perl* package).
@@ -40,7 +44,7 @@ One the build is done, launch the analysis:
 
 __Purpose__: identify the symbols referenced in compilation artifacts (object files, librairies, executables).
 
-`# elfxplore analyse-symbols -d database.db < symbols.txt`
+`# elfxplore analyse-symbols -d database.db
 
 ## License
 

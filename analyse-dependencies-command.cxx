@@ -4,22 +4,104 @@
 #include <algorithm>
 #include <set>
 #include <map>
+#include <vector>
+#include <regex>
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/process.hpp>
 
 #include "Database2.hxx"
 #include "utils.hxx"
 
 namespace bpo = boost::program_options;
 namespace bfs = boost::filesystem;
+namespace bp = boost::process;
 
 namespace {
+
+std::vector<bfs::path> load_default_library_directories() {
+  std::regex search_dir_regex(R"CMD(SEARCH_DIR\("=?([^"]+)"\))CMD");
+  bp::ipstream pipe_stream;
+  bp::child c("gcc -Xlinker --verbose", bp::std_out > pipe_stream, bp::std_err > bp::null);
+
+  std::vector<bfs::path> directories;
+
+  std::string line;
+  while (pipe_stream && std::getline(pipe_stream, line)) {
+    auto matches_begin = std::sregex_iterator(line.begin(), line.end(), search_dir_regex);
+    auto matches_end = std::sregex_iterator();
+    for (std::sregex_iterator it = matches_begin; it != matches_end; ++it) {
+      std::smatch match = *it;
+      directories.emplace_back(match[1].str());
+    }
+  }
+
+  c.wait();
+
+  return directories;
+}
+
+const std::vector<bfs::path>& default_library_directories() {
+  static const std::vector<bfs::path> directories = load_default_library_directories();
+  return directories;
+}
+
+bool locate_library(const std::string& name, const std::vector<bfs::path>& directories, std::string& out) {
+  for(const bfs::path& dir : directories) {
+    const bfs::path candidate = dir / name;
+    if (bfs::exists(candidate)) {
+      out = bfs::canonical(candidate).string();
+      return true;
+    }
+  }
+
+  return false;
+}
+
+std::string locate_library(const std::string& name,
+                           const std::vector<bfs::path>& default_directories,
+                           const std::vector<bfs::path>& other_directories) {
+  std::string path;
+
+  locate_library("lib" + name + ".so", other_directories, path)
+      || locate_library("lib" + name + ".so", default_directories, path)
+      || locate_library("lib" + name + ".a", other_directories, path)
+      || locate_library("lib" + name + ".a", default_directories, path);
+
+  return path;
+}
 
 struct CompilationOperation {
   std::string output;
   std::string output_type;
   std::map<std::string, std::string> dependencies;
+
+  std::vector<std::string> system_include_directories;
+  std::vector<std::string> include_directories;
+  std::vector<bfs::path> library_directories;
+
+  std::vector<std::string> errors;
+
+  void add_system_include_dir(std::string path) {
+    system_include_directories.emplace_back(std::move(path));
+  }
+
+  void add_include_dir(std::string path) {
+    include_directories.emplace_back(std::move(path));
+  }
+
+  void add_library_dir(std::string path) {
+    library_directories.emplace_back(std::move(path));
+  }
+
+  void add_dependency(const std::string& path, std::string type) {
+    dependencies[path] = std::move(type);
+  }
+
+  void add_error(std::string err) {
+    errors.emplace_back(std::move(err));
+  }
 };
 
 const std::vector<std::string> ignored_single_args = {"-D", "-w", "-W", "-O", "-m", "-g", "-f", "-MD", "-c",
@@ -45,11 +127,13 @@ bool is_cc(const std::string& command) {
   return std::find(gcc_commands.begin(), gcc_commands.end(), command) != gcc_commands.end();
 }
 
-CompilationOperation parse_cc_args(const std::vector<std::string>& args)
+CompilationOperation parse_cc_args(const std::vector<std::string>& args, const bfs::path& wd)
 {
   CompilationOperation cmd;
 
-  for(size_t i = 1; i < args.size(); ++i) {
+  auto absolute = [&wd](const std::string& path) { return expand_path(path, wd); };
+
+  for(size_t i = 2; i < args.size(); ++i) {
     const std::string& arg = args[i];
 
     if (is_arg(ignored_single_args, arg)) {
@@ -57,40 +141,48 @@ CompilationOperation parse_cc_args(const std::vector<std::string>& args)
     } else if (is_arg(ignored_double_args, arg)) {
       ++i;
     } else if (arg == "-isystem") {
-      cmd.dependencies[args[++i]] = "system-include-dir";
+      cmd.add_system_include_dir(absolute(args[++i]));
     } else if (starts_with(arg, "-I")) {
-      cmd.dependencies[get_arg(args, i)] = "include-dir";
+      const std::string argv = get_arg(args, i);
+      try { cmd.add_include_dir(absolute(argv)); }
+      catch (boost::filesystem::filesystem_error&) { cmd.add_error("Invalid -I: " + argv); }
     } else if (starts_with(arg, "-L")) {
-      cmd.dependencies[get_arg(args, i)] = "library-dir";
+      const std::string argv = get_arg(args, i);
+      try { cmd.add_library_dir(absolute(argv)); }
+      catch (boost::filesystem::filesystem_error&) { cmd.add_error("Invalid -L: " + argv); }
     } else if (starts_with(arg, "-l")) {
-      const std::string& value = get_arg(args, i);
-      cmd.dependencies[value] = library_type(value);
+      const std::string argv = get_arg(args, i);
+      const std::string realpath = locate_library(argv, default_library_directories(), cmd.library_directories);
+      if (realpath.empty()) { cmd.add_error("Invalid -l: " + argv); }
+      else { cmd.add_dependency(realpath, library_type(realpath)); }
     } else if (starts_with(arg, "-o")) {
-      cmd.output = get_arg(args, i);
+      cmd.output = absolute(get_arg(args, i));
       cmd.output_type = output_type(cmd.output);
     } else {
-      cmd.dependencies[arg] = input_type(arg);
+      cmd.add_dependency(absolute(arg), input_type(arg));
     }
   }
 
   return cmd;
 }
 
-CompilationOperation parse_ar_args(const std::vector<std::string>& args)
+CompilationOperation parse_ar_args(const std::vector<std::string>& args, const bfs::path& wd)
 {
   CompilationOperation cmd;
   cmd.output_type = "static";
 
-  for(size_t i = 1; i < args.size(); ++i) {
+  auto absolute = [&wd](const std::string& path) { return expand_path(path, wd); };
+
+  for(size_t i = 2; i < args.size(); ++i) {
     const std::string& arg = args[i];
 
     if (ends_with(arg, ".a")) {
       if (cmd.output.empty())
-        cmd.output = arg;
+        cmd.output = absolute(arg);
       else
-        cmd.dependencies[arg] = "static";
+        cmd.add_dependency(absolute(arg), "static");
     } else if (ends_with(arg, ".o")) {
-      cmd.dependencies[arg] = "object";
+      cmd.add_dependency(absolute(arg), "object");
     }
   }
 
@@ -99,12 +191,13 @@ CompilationOperation parse_ar_args(const std::vector<std::string>& args)
 
 void process_command(const std::string& command, std::vector<CompilationOperation>& operations) {
   const std::vector<std::string> args = bpo::split_unix(command);
-  const std::string& argv0 = args.front();
+  const std::string& wd = args[0];
+  const std::string& argv0 = args[1];
 
   if (is_cc(argv0)) {
-    operations.emplace_back(parse_cc_args(args));
+    operations.emplace_back(parse_cc_args(args, wd));
   } else if (argv0 == "ar") {
-    operations.emplace_back(parse_ar_args(args));
+    operations.emplace_back(parse_ar_args(args, wd));
   }
 }
 
@@ -222,6 +315,10 @@ int analyse_dependencies_command(const std::vector<std::string>& command, const 
           std::cout << "\t" << dependency.first << ": " << dependency.second << std::endl;
           db.create_dependency(dependee_id, db.artifact_id_by_name(dependency.first));
         }
+      }
+
+      for (const auto& error: op.errors) {
+        std::cout << "\tERROR " << error << std::endl;
       }
     }
 

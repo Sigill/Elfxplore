@@ -53,7 +53,6 @@ create table if not exists "symbol_references" (
   "type" VARCHAR(1) NOT NULL,
   "size" INTEGER DEFAULT NULL
 );
-create unique index "unique_symbol_reference" on "symbol_references" ("artifact_id", "symbol_id", "category", "type");
 create index "symbol_reference_by_artifact" on "symbol_references" ("artifact_id");
 create index "symbol_reference_by_symbol" on "symbol_references" ("symbol_id");
 create index "symbol_reference_by_category" on "symbol_references" ("category");

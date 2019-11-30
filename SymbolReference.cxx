@@ -8,7 +8,13 @@ bool SymbolReferenceCmp::operator()(const SymbolReference& lhs, const SymbolRefe
     if (lhs.type < rhs.type) {
       return true;
     } else if (lhs.type == rhs.type) {
-      return lhs.size < rhs.size;
+      if (lhs.address < rhs.address) {
+        return true;
+      } else if (lhs.address == rhs.address) {
+        return lhs.size < rhs.size;
+      } else {
+        return false;
+      }
     } else {
       return false;
     }

@@ -7,7 +7,7 @@
 bool starts_with(const std::string& str, const std::string& prefix);
 bool ends_with(const std::string& str, const std::string& suffix);
 
-std::string expand_path(const std::string& in);
+std::string expand_path(const std::string& in, const boost::filesystem::path& base = boost::filesystem::current_path());
 
 const char* library_type(const std::string& value);
 

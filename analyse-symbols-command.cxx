@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <future>
+#include <functional>
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
@@ -31,62 +32,69 @@ void extract_symbols(const std::string& usable_path, ArtifactSymbols& symbols) {
 //  f1.wait();
 }
 
-void insert_symbols(Database2& db, const std::string& logical_path, ArtifactSymbols& symbols) {
-  long long artifact_id = db.artifact_id_by_name(logical_path);
+void insert_symbols(Database2& db, const std::string& path, ArtifactSymbols& symbols) {
+  long long artifact_id = db.artifact_id_by_name(path);
   if (artifact_id == -1) {
-    db.create_artifact(logical_path, output_type(logical_path));
+    db.create_artifact(path, output_type(path));
     artifact_id = db.last_id();
   }
 
-  std::cout << artifact_id << " " << logical_path << std::endl;
+  std::cout << artifact_id << " " << path << std::endl;
 
   db.insert_symbol_references(artifact_id, symbols);
 }
 
-void process_artifact(Database2& db, const std::string& logical_path, const bfs::path& prefix, ArtifactSymbols& symbols) {
-  const bfs::path usable_path = prefix.empty() ? logical_path : (prefix / logical_path);
+class SymbolExtractor {
+private:
+  Database2& db;
+  std::vector<ArtifactSymbols> symbols;
 
-  extract_symbols(logical_path, symbols);
+public:
+  explicit SymbolExtractor(Database2& db) : db(db), symbols() {}
 
-  insert_symbols(db, logical_path, symbols);
-}
+  void operator()(const std::vector<std::string>& files) {
+    while(symbols.size() < files.size()) symbols.emplace_back();
 
-void process_artifact(Database2& db, const std::string& logical_path, const bfs::path& prefix) {
-  ArtifactSymbols symbols;
-  process_artifact(db, logical_path, prefix, symbols);
-}
-
-void process_artifacts(Database2& db, std::istream& in, const bfs::path& prefix) {
-  constexpr size_t N = 512;
-
-  std::string line;
-  std::vector<std::vector<std::string>> chunks; chunks.emplace_back();
-  while (std::getline(in, line) && !line.empty()) {
-    if (chunks.back().size() == N)
-      chunks.emplace_back();
-
-    chunks.back().push_back(line);
-  }
-
-  std::vector<ArtifactSymbols> symbols(N);
-  for(const std::vector<std::string>& chunk : chunks) {
 #pragma omp parallel for
-    for(size_t i = 0; i < chunk.size(); ++i) {
+    for(size_t i = 0; i < files.size(); ++i) {
       symbols[i].undefined.clear();
       symbols[i].external.clear();
       symbols[i].internal.clear();
 
-      const std::string& logical_path = chunk[i];
-      const bfs::path usable_path = prefix.empty() ? logical_path : (prefix / logical_path);
-
-      extract_symbols(usable_path.string(), symbols[i]);
+      extract_symbols(files[i], symbols[i]);
     }
 
-    for(size_t i = 0; i < chunk.size(); ++i) {
-      insert_symbols(db, chunk[i], symbols[i]);
+    for(size_t i = 0; i < files.size(); ++i) {
+      insert_symbols(db, files[i], symbols[i]);
     }
   }
-}
+};
+
+template<typename T>
+class BufferedTasks {
+private:
+  std::vector<T> buffer;
+  size_t capacity;
+  std::function<void(const std::vector<T>&)> process;
+
+public:
+  BufferedTasks(size_t N, std::function<void(const std::vector<T>&)> processor) : buffer(), capacity(N), process(processor) {
+    buffer.reserve(N);
+  }
+
+  void processBuffer() {
+    process(buffer);
+    buffer.clear();
+  }
+
+  void push(const T& t) {
+    buffer.push_back(t);
+    if (buffer.size() == capacity)
+      processBuffer();
+  }
+
+  void done() { processBuffer(); }
+};
 
 } // anonymous namespace
 
@@ -98,11 +106,11 @@ int analyse_symbols_command(const std::vector<std::string>& command, const std::
       ("help,h", "Produce help message.")
       ("database,d", bpo::value<std::string>()->required(),
        "SQLite database to fill.")
-      ("artifacts", bpo::value<std::vector<std::string>>()->multitoken()->default_value({"-"}, "-"),
+      ("artifacts", bpo::value<std::vector<std::string>>()->multitoken(),
        "Artifacts (.o, .so, .a ...) to process.\n"
-       "Use - to read from cin (default).\n"
+       "Use - to read from cin.\n"
        "Use @path/to/file to read from a file.")
-      ("prefix,p", bpo::value<std::string>()->default_value(""),
+      ("prefix,p", bpo::value<std::string>()->default_value(bfs::current_path().string()),
        "If artifacts use relative paths.")
       ;
 
@@ -129,24 +137,37 @@ int analyse_symbols_command(const std::vector<std::string>& command, const std::
     return -1;
   }
 
+  auto expand = [prefix=vm["prefix"].as<std::string>()](const std::string& path) { return expand_path(path, prefix); };
+
   Database2 db(vm["database"].as<std::string>());
-
-  const bfs::path prefix = vm["prefix"].as<std::string>();
-
   SQLite::Transaction transaction(db.database());
+  BufferedTasks<std::string> tasks(512, SymbolExtractor(db));
 
-  for(const std::string& artifact : vm["artifacts"].as<std::vector<std::string>>()) {
-    if (artifact == "-") {
-      process_artifacts(db, std::cin, prefix);
-    } else if (artifact[0] == '@') {
-      const bfs::path lst = expand_path(artifact.substr(1)); // Might be @~/...
-      std::ifstream in(lst.string());
-      process_artifacts(db, in, prefix);
-    } else {
-      process_artifact(db, artifact, prefix);
+  if (vm.count("artifacts") > 0) {
+    for(const std::string& artifact : vm["artifacts"].as<std::vector<std::string>>()) {
+      if (artifact == "-") {
+        std::string line;
+        while (std::getline(std::cin, line)) { tasks.push(expand(line)); }
+      } else if (artifact[0] == '@') {
+        const bfs::path lst = expand(artifact.substr(1)); // Might be @~/...
+        std::ifstream in(lst.string());
+        std::string line;
+        while (std::getline(in, line)) { tasks.push(expand(line)); }
+      } else {
+        tasks.push(expand(artifact));
+      }
+    }
+  } else {
+    SQLite::Statement q(db.database(), "select id, name, type from artifacts where type not in (\"source\", \"static\")");
+    while (q.executeStep()) {
+      std::string name = q.getColumn(1).getString();
+      if (bfs::exists(name)) {
+        tasks.push(name);
+      }
     }
   }
 
+  tasks.done();
   transaction.commit();
 
   std::cout << db.database().execAndGet("select count(*) from symbols").getInt64() << " symbols" << std::endl;

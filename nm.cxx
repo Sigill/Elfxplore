@@ -17,13 +17,17 @@ void nm(const std::string& file, SymbolReferenceSet& symbols, const std::string&
   std::string line;
 //  std::smatch nm_match;
   while (pipe_stream && std::getline(pipe_stream, line) && !line.empty()) {
+    long long address = -1;
     long long sz = -1;
     size_t offset = 17;
 
     if (line[offset] >= '0' && line[offset] <= '9') {
+      const std::string addr_str(line, 0, 16);
+      address = std::stoll(addr_str, nullptr, 16);
+
       const std::string size_str(line, 17, 16);
       sz = std::stoll(size_str, nullptr, 16);
-      offset += 17;
+      offset = 34;
     }
 
     // Filter-out:
@@ -35,7 +39,7 @@ void nm(const std::string& file, SymbolReferenceSet& symbols, const std::string&
         || memrchr(&(line[offset + 2]), '.', line.length() - offset - 2) != NULL)
       continue;
 
-    symbols.emplace(std::string(line, offset + 2), line[offset], sz);
+    symbols.emplace(std::string(line, offset + 2), line[offset], address, sz);
 
 //    if (std::regex_match(line, nm_match, symbol_regex)) {
 //      std::string name = nm_match[3];

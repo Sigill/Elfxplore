@@ -2,6 +2,7 @@
 #define SYMBOL_REFERENCE_SET_HXX
 
 #include "SymbolReference.hxx"
+#include <set>
 
 using SymbolReferenceSet = std::set<SymbolReference, SymbolReferenceCmp>;
 

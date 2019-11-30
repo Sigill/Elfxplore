@@ -7,13 +7,13 @@
 class SymbolReference
 {
 public:
-  SymbolReference(std::string name, char type, long long size)
-    : name(std::move(name)), type(type), size(size)
+  SymbolReference(std::string name, char type, long long address, long long size)
+    : name(std::move(name)), type(type), address(address), size(size)
   {}
 
   std::string name;
   char type;
-  long long size;
+  long long address, size;
 };
 
 struct SymbolReferenceCmp {
