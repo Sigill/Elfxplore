@@ -1,4 +1,4 @@
-#include "analyse-dependencies-command.hxx"
+#include "extract-dependencies-command.hxx"
 
 #include <iostream>
 #include <algorithm>
@@ -227,7 +227,7 @@ bool is_dependency_type(const std::string& type) {
 
 } // anonymous namespace
 
-int analyse_dependencies_command(const std::vector<std::string>& command, const std::vector<std::string>& args)
+int extract_dependencies_command(const std::vector<std::string>& command, const std::vector<std::string>& args)
 {
   bpo::options_description desc("Options");
 

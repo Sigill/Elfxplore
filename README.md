@@ -38,13 +38,13 @@ For CMake, set the following options:
 
 One the build is done, launch the analysis:
 
-`# elfxplore analyse-dependencies -d database.db < /tmp/operations.log`
+`# elfxplore extract-dependencies -d database.db < /tmp/operations.log`
 
 ## Symbols analysis
 
 __Purpose__: identify the symbols referenced in compilation artifacts (object files, librairies, executables).
 
-`# elfxplore analyse-symbols -d database.db
+`# elfxplore extract-symbols -d database.db
 
 ## License
 

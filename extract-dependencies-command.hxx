@@ -4,6 +4,6 @@
 #include <vector>
 #include <string>
 
-int analyse_dependencies_command(const std::vector<std::string>& command, const std::vector<std::string>& args);
+int extract_dependencies_command(const std::vector<std::string>& command, const std::vector<std::string>& args);
 
 #endif // ANALYSE_DEPENDENCIES_COMMAND_HXX

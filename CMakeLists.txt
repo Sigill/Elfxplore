@@ -16,7 +16,7 @@ add_executable(elfxplore
     Database2.cxx
     utils.cxx
     db-command.cxx
-    analyse-symbols-command.cxx
-    analyse-dependencies-command.cxx
+    extract-dependencies-command.cxx
+    extract-symbols-command.cxx
     elfxplore.cxx)
 target_link_libraries(elfxplore Boost::system Boost::program_options Boost::filesystem Threads::Threads SQLite::SQLite3 SQLiteCpp OpenMP::OpenMP_CXX)

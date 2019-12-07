@@ -4,6 +4,6 @@
 #include <vector>
 #include <string>
 
-int analyse_symbols_command(const std::vector<std::string>& command, const std::vector<std::string>& args);
+int extract_symbols_command(const std::vector<std::string>& command, const std::vector<std::string>& args);
 
 #endif // ANALYSE_SYMBOLS_COMMAND_HXX

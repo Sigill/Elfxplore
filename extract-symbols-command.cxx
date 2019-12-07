@@ -1,4 +1,4 @@
-#include "analyse-symbols-command.hxx"
+#include "extract-symbols-command.hxx"
 
 #include <iostream>
 #include <future>
@@ -16,7 +16,7 @@ namespace bfs = boost::filesystem;
 
 namespace {
 
-void extract_symbols(const std::string& usable_path, ArtifactSymbols& symbols) {
+void extract_symbols_from_file(const std::string& usable_path, ArtifactSymbols& symbols) {
   nm_undefined(usable_path, symbols.undefined);
   nm_defined_extern(usable_path, symbols.external);
   nm_defined(usable_path, symbols.internal);
@@ -61,7 +61,7 @@ public:
       symbols[i].external.clear();
       symbols[i].internal.clear();
 
-      extract_symbols(files[i], symbols[i]);
+      extract_symbols_from_file(files[i], symbols[i]);
     }
 
     for(size_t i = 0; i < files.size(); ++i) {
@@ -98,7 +98,7 @@ public:
 
 } // anonymous namespace
 
-int analyse_symbols_command(const std::vector<std::string>& command, const std::vector<std::string>& args)
+int extract_symbols_command(const std::vector<std::string>& command, const std::vector<std::string>& args)
 {
   bpo::options_description desc("Options");
 
