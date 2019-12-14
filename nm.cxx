@@ -18,7 +18,7 @@ void nm(const std::string& file, SymbolReferenceSet& symbols, const std::string&
 //  std::smatch nm_match;
   while (pipe_stream && std::getline(pipe_stream, line) && !line.empty()) {
     long long address = -1;
-    long long sz = -1;
+    long long sz = 0;
     size_t offset = 17;
 
     if (line[offset] >= '0' && line[offset] <= '9') {

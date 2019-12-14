@@ -121,10 +121,12 @@ int Database2::symbol_id_by_name(const std::string& name) {
 void Database2::create_symbol_reference(long long artifact_id, long long symbol_id, const char* category, const char type, long long size) {
   auto& stm = *create_symbol_reference_stm;
 
+  const char type_str[2] = {type, 0};
+
   stm.bind(1, artifact_id);
   stm.bind(2, symbol_id);
   stm.bind(3, category);
-  stm.bind(4, &type, 1);
+  stm.bind(4, type_str);
   stm.bind(5, size);
 
   stm.exec();

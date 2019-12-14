@@ -4,6 +4,7 @@
 #include "db-command.hxx"
 #include "extract-symbols-command.hxx"
 #include "extract-dependencies-command.hxx"
+#include "analyse-symbols-command.hxx"
 
 namespace bpo = boost::program_options;
 
@@ -39,5 +40,7 @@ int main(int argc, char** argv)
     return extract_symbols_command(commands, std::vector<std::string>(argv + 2, argv + argc));
   } else if (commands.back() == "extract-dependencies") {
     extract_dependencies_command(commands, std::vector<std::string>(argv + 2, argv + argc));
+  } else if (commands.back() == "analyse-symbols") {
+    analyse_symbols_command(commands, std::vector<std::string>(argv + 2, argv + argc));
   }
 }
