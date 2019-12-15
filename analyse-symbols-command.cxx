@@ -12,35 +12,36 @@
 
 namespace bpo = boost::program_options;
 
-int analyse_symbols_command(const std::vector<std::string>& command, const std::vector<std::string>& args)
+boost::program_options::options_description Analyse_Symbols_Command::options() const
 {
-  bpo::options_description desc("Options");
-
-  desc.add_options()
-      ("help,h", "Produce help message.")
-      ("database,d", bpo::value<std::string>()->required(),
-       "SQLite database.")
-      ("artifact-type", bpo::value<std::vector<std::string>>()->multitoken(),
+  bpo::options_description opt = default_options();
+  opt.add_options()
+      ("artifact-type",
+       bpo::value<std::vector<std::string>>()->multitoken(),
        "Only consider artifacts matching those types.")
-      ("not-artifact-type", bpo::value<std::vector<std::string>>()->multitoken(),
+      ("not-artifact-type",
+       bpo::value<std::vector<std::string>>()->multitoken(),
        "Only consider artifacts not matching those types.")
-      ("reference-category", bpo::value<std::vector<std::string>>()->multitoken(),
+      ("reference-category",
+       bpo::value<std::vector<std::string>>()->multitoken(),
        "Only consider references matching those categories.")
-      ("not-reference-category", bpo::value<std::vector<std::string>>()->multitoken(),
+      ("not-reference-category",
+       bpo::value<std::vector<std::string>>()->multitoken(),
        "Only consider references not matching those categories.")
       ;
 
+  return opt;
+}
+
+int Analyse_Symbols_Command::execute(const std::vector<std::string>& args) const
+{
   bpo::variables_map vm;
 
   try {
-    bpo::store(bpo::command_line_parser(args).options(desc).run(), vm);
+    bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
 
     if (vm.count("help")) {
-      std::cout << "Usage:";
-      for(const std::string& c : command)
-        std::cout << " " << c;
-      std::cout << " [options]" << std::endl;
-      std::cout << desc;
+      usage(std::cout);
       return 0;
     }
 
@@ -50,7 +51,7 @@ int analyse_symbols_command(const std::vector<std::string>& command, const std::
     return -1;
   }
 
-  Database2 db(vm["database"].as<std::string>());
+  Database2 db(vm["db"].as<std::string>());
 
   std::vector<std::string> conditions;
 

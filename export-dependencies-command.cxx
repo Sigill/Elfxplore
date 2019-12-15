@@ -179,31 +179,30 @@ void TLPDependencyPrinter::print(std::ostream &out) {
 
 } // anonymous namespace
 
-int export_dependencies_command(const std::vector<std::string>& command, const std::vector<std::string>& args)
+boost::program_options::options_description Export_Dependencies_Command::options() const
 {
-  bpo::options_description desc("Options");
-
-  desc.add_options()
-      ("help,h", "Produce help message.")
-      ("database,d", bpo::value<std::string>()->required(),
-       "SQLite database.")
-      ("type", bpo::value<std::vector<std::string>>()->multitoken()->default_value({}, ""),
+  bpo::options_description opt = default_options();
+  opt.add_options()
+      ("type",
+       bpo::value<std::vector<std::string>>()->multitoken()->default_value({}, ""),
        "Only consider artifacts matching those types.")
-      ("not-type", bpo::value<std::vector<std::string>>()->multitoken()->default_value({}, ""),
+      ("not-type",
+       bpo::value<std::vector<std::string>>()->multitoken()->default_value({}, ""),
        "Only consider artifacts not matching those types.")
       ;
 
+  return opt;
+}
+
+int Export_Dependencies_Command::execute(const std::vector<std::string>& args) const
+{
   bpo::variables_map vm;
 
   try {
-    bpo::store(bpo::command_line_parser(args).options(desc).run(), vm);
+    bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
 
     if (vm.count("help")) {
-      std::cout << "Usage:";
-      for(const std::string& c : command)
-        std::cout << " " << c;
-      std::cout << " [options]" << std::endl;
-      std::cout << desc;
+      usage(std::cout);
       return 0;
     }
 
@@ -213,7 +212,7 @@ int export_dependencies_command(const std::vector<std::string>& command, const s
     return -1;
   }
 
-  Database2 db(vm["database"].as<std::string>());
+  Database2 db(vm["db"].as<std::string>());
 
   TLPDependencyPrinter printer(db);
   printer.filter_types(vm["type"].as<std::vector<std::string>>(), vm["not-type"].as<std::vector<std::string>>());

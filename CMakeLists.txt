@@ -16,6 +16,7 @@ add_executable(elfxplore
     Database2.cxx
     utils.cxx
     query-utils.cxx
+    command.cxx
     db-command.cxx
     extract-dependencies-command.cxx
     export-dependencies-command.cxx

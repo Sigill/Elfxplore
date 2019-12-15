@@ -1,6 +1,9 @@
 #include <iostream>
+#include <vector>
+#include <memory>
 #include <boost/program_options.hpp>
 
+#include "command.hxx"
 #include "db-command.hxx"
 #include "extract-symbols-command.hxx"
 #include "extract-dependencies-command.hxx"
@@ -22,6 +25,22 @@ bool is_help(const std::string& command) {
   return command == "help" || command == "-h" || command == "--help";
 }
 
+std::unique_ptr<Command> factory(const std::vector<std::string>& command) {
+  if (command.back() == "db") {
+    return std::make_unique<DB_Command>(command);
+  } else if (command.back() == "extract-dependencies") {
+    return std::make_unique<Extract_Dependencies_Command>(command);
+  } else if (command.back() == "extract-symbols") {
+    return std::make_unique<Extract_Symbols_Command>(command);
+  } else if (command.back() == "analyse-symbols") {
+    return std::make_unique<Analyse_Symbols_Command>(command);
+  } else if (command.back() == "export-dependencies") {
+    return std::make_unique<Export_Dependencies_Command>(command);
+  }
+
+  return nullptr;
+}
+
 int main(int argc, char** argv)
 {
   std::vector<std::string> commands = {argv[0]};
@@ -31,19 +50,30 @@ int main(int argc, char** argv)
     return -1;
   }
 
-  commands.emplace_back(argv[1]);
-  if (is_help(commands.back())) {
+  size_t i = 1;
+  bool print_help = is_help(argv[i]);
+
+  if (print_help && argc == 2) {
     usage(commands);
     return 0;
-  } else if (commands.back() == "db") {
-    return db_command(commands, std::vector<std::string>(argv + 2, argv + argc));
-  } else if (commands.back() == "extract-symbols") {
-    return extract_symbols_command(commands, std::vector<std::string>(argv + 2, argv + argc));
-  } else if (commands.back() == "extract-dependencies") {
-    extract_dependencies_command(commands, std::vector<std::string>(argv + 2, argv + argc));
-  } else if (commands.back() == "analyse-symbols") {
-    analyse_symbols_command(commands, std::vector<std::string>(argv + 2, argv + argc));
-  } else if (commands.back() == "export-dependencies") {
-    export_dependencies_command(commands, std::vector<std::string>(argv + 2, argv + argc));
+  }
+
+  if (print_help) {
+    ++i;
+  }
+
+  commands.emplace_back(argv[i]);
+
+  std::unique_ptr<Command> cmd = factory(commands);
+  if (cmd) {
+    if (print_help) {
+      cmd->usage(std::cout);
+    } else {
+      return cmd->execute(std::vector<std::string>(argv + 2, argv + argc));
+    }
+  } else {
+    std::cerr << "Unknown command: " << commands.back() << std::endl;
+    commands.pop_back();
+    usage(commands);
   }
 }

@@ -4,6 +4,13 @@
 #include <vector>
 #include <string>
 
-int extract_symbols_command(const std::vector<std::string>& command, const std::vector<std::string>& args);
+#include "command.hxx"
+
+class Extract_Symbols_Command : public Command {
+public:
+  using Command::Command;
+  boost::program_options::options_description options() const override;
+  int execute(const std::vector<std::string>& args) const override;
+};
 
 #endif // ANALYSE_SYMBOLS_COMMAND_HXX

@@ -98,36 +98,35 @@ public:
 
 } // anonymous namespace
 
-int extract_symbols_command(const std::vector<std::string>& command, const std::vector<std::string>& args)
+boost::program_options::options_description Extract_Symbols_Command::options() const
 {
-  bpo::options_description desc("Options");
-
-  desc.add_options()
-      ("help,h", "Produce help message.")
-      ("database,d", bpo::value<std::string>()->required(),
-       "SQLite database to fill.")
-      ("artifacts", bpo::value<std::vector<std::string>>()->multitoken(),
+  bpo::options_description opt = default_options();
+  opt.add_options()
+      ("artifacts",
+       bpo::value<std::vector<std::string>>()->multitoken(),
        "Artifacts (.o, .so, .a ...) to process.\n"
        "Use - to read from cin.\n"
        "Use @path/to/file to read from a file.")
-      ("prefix,p", bpo::value<std::string>()->default_value(bfs::current_path().string()),
+      ("prefix,p",
+       bpo::value<std::string>()->default_value(bfs::current_path().string()),
        "If artifacts use relative paths.")
       ;
 
+  return opt;
+}
+
+int Extract_Symbols_Command::execute(const std::vector<std::string>& args) const
+{
   bpo::positional_options_description p;
   p.add("artifacts", -1);
 
   bpo::variables_map vm;
 
   try {
-    bpo::store(bpo::command_line_parser(args).options(desc).positional(p).run(), vm);
+    bpo::store(bpo::command_line_parser(args).options(options()).positional(p).run(), vm);
 
     if (vm.count("help")) {
-      std::cout << "Usage:";
-      for(const std::string& c : command)
-        std::cout << " " << c;
-      std::cout << " [options]" << std::endl;
-      std::cout << desc;
+      usage(std::cout);
       return 0;
     }
 
@@ -139,7 +138,7 @@ int extract_symbols_command(const std::vector<std::string>& command, const std::
 
   auto expand = [prefix=vm["prefix"].as<std::string>()](const std::string& path) { return expand_path(path, prefix); };
 
-  Database2 db(vm["database"].as<std::string>());
+  Database2 db(vm["db"].as<std::string>());
   SQLite::Transaction transaction(db.database());
   BufferedTasks<std::string> tasks(512, SymbolExtractor(db));
 

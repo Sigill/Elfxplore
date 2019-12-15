@@ -7,31 +7,28 @@
 
 namespace bpo = boost::program_options;
 
-int db_command(const std::vector<std::string>& command, const std::vector<std::string>& args)
+boost::program_options::options_description DB_Command::options() const
 {
-  bpo::options_description desc("Options");
-
-  desc.add_options()
-      ("help,h", "Produce help message.")
-      ("db", bpo::value<std::string>()->required()->value_name("file"),
-       "SQLite database.")
+  bpo::options_description opt = default_options();
+  opt.add_options()
       ("init", "Initialize the database.")
       ("clear-symbols", "Clear the symbols table.");
 
+  return opt;
+}
+
+int DB_Command::execute(const std::vector<std::string>& args) const
+{
   bpo::positional_options_description p;
   p.add("db", 1);
 
   bpo::variables_map vm;
 
   try {
-    bpo::store(bpo::command_line_parser(args).options(desc).positional(p).run(), vm);
+    bpo::store(bpo::command_line_parser(args).options(options()).positional(p).run(), vm);
 
     if (vm.count("help")) {
-      std::cout << "Usage:";
-      for(const std::string& c : command)
-        std::cout << " " << c;
-      std::cout << " [options]" << std::endl;
-      std::cout << desc;
+      usage(std::cout);
       return 0;
     }
 

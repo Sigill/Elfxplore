@@ -227,34 +227,31 @@ bool is_dependency_type(const std::string& type) {
 
 } // anonymous namespace
 
-int extract_dependencies_command(const std::vector<std::string>& command, const std::vector<std::string>& args)
+boost::program_options::options_description Extract_Dependencies_Command::options() const
 {
-  bpo::options_description desc("Options");
-
-  desc.add_options()
-      ("help,h", "Produce help message.")
-      ("database,d", bpo::value<std::string>()->required(),
-       "SQLite database to fill.")
+  bpo::options_description opt = default_options();
+  opt.add_options()
       ("commands", bpo::value<std::vector<std::string>>()->multitoken()->default_value({"-"}, "-"),
        "Command lines to parse.\n"
        "Use - to read from cin (default).\n"
        "Use @path/to/file to read from a file.")
       ;
 
+  return opt;
+}
+
+int Extract_Dependencies_Command::execute(const std::vector<std::string>& args) const
+{
   bpo::positional_options_description p;
   p.add("commands", -1);
 
   bpo::variables_map vm;
 
   try {
-    bpo::store(bpo::command_line_parser(args).options(desc).positional(p).run(), vm);
+    bpo::store(bpo::command_line_parser(args).options(options()).positional(p).run(), vm);
 
     if (vm.count("help")) {
-      std::cout << "Usage:";
-      for(const std::string& c : command)
-        std::cout << " " << c;
-      std::cout << " [options]" << std::endl;
-      std::cout << desc;
+      usage(std::cout);
       return 0;
     }
 
@@ -289,7 +286,7 @@ int extract_dependencies_command(const std::vector<std::string>& command, const 
     }
   }
 
-  Database2 db(vm["database"].as<std::string>());
+  Database2 db(vm["db"].as<std::string>());
 
   {
     SQLite::Transaction transaction(db.database());
