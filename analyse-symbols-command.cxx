@@ -1,8 +1,6 @@
 #include "analyse-symbols-command.hxx"
 
 #include <iostream>
-#include <iterator>
-#include <iomanip>
 #include <sstream>
 
 #include <boost/program_options.hpp>
@@ -10,78 +8,9 @@
 #include "infix_iterator.hxx"
 
 #include "Database2.hxx"
+#include "query-utils.hxx"
 
 namespace bpo = boost::program_options;
-
-namespace {
-
-struct quoted_string_literal
-{
-  const std::string& value;
-  explicit quoted_string_literal(const std::string& value) : value(value) {}
-};
-
-quoted_string_literal
-quote_string_literal(const std::string& value) {
-  return quoted_string_literal(value);
-}
-
-std::ostream& operator<<(std::ostream& out, const quoted_string_literal& m) {
-  return out << std::quoted(m.value.c_str(), '\'', '\'');
-}
-
-template<typename T>
-struct joined
-{
-  const std::vector<T> values;
-  const char* separator;
-  explicit joined(const std::vector<T>& values, const char* separator)
-    : values(values)
-    , separator(separator)
-  {}
-};
-
-template<typename T>
-joined<T> join(const std::vector<T>& values, const char* separator) {
-  return joined<T>(values, separator);
-}
-
-template<typename T>
-std::ostream& operator<<(std::ostream& out, const joined<T>& m) {
-  if (m.values.size() > 1) std::copy(m.values.cbegin(), --m.values.cend(), std::ostream_iterator<T>(out, m.separator));
-  if (m.values.size() > 0) out << m.values.back();
-  return out;
-}
-
-template<>
-std::ostream& operator<<(std::ostream& out, const joined<std::string>& m) {
-  if (m.values.size() > 1) std::transform(m.values.cbegin(), --m.values.cend(),
-                                          std::ostream_iterator<quoted_string_literal>(out, m.separator),
-                                          quote_string_literal);
-  if (m.values.size() > 0) out << quoted_string_literal(m.values.back());
-  return out;
-}
-
-template<typename T>
-struct in_expr_manip
-{
-  const std::vector<T> values;
-  explicit in_expr_manip(std::vector<T> values)
-    : values(std::move(values))
-  {}
-};
-
-template<typename T>
-in_expr_manip<T> in_expr(const std::vector<T>& values) {
-  return in_expr_manip<T>(values);
-}
-
-template<typename T>
-std::ostream& operator<<(std::ostream& out, const in_expr_manip<T>& m) {
-  return out << "(" << join(m.values, ", ") << ")";
-}
-
-} // anonymous namespace
 
 int analyse_symbols_command(const std::vector<std::string>& command, const std::vector<std::string>& args)
 {

@@ -15,8 +15,10 @@ add_executable(elfxplore
     nm.cxx
     Database2.cxx
     utils.cxx
+    query-utils.cxx
     db-command.cxx
     extract-dependencies-command.cxx
+    export-dependencies-command.cxx
     extract-symbols-command.cxx
     analyse-symbols-command.cxx
     elfxplore.cxx)
