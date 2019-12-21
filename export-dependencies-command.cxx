@@ -26,151 +26,216 @@ std::map<std::string, std::string> node_color = {
   {"executable", "(170,0,0,255)"}
 };
 
-class DependencyPrinter {
-private:
-  Database2 &db;
-  std::string included_types_in_expr, excluded_types_in_expr;
-
-  void type_conditions(const std::string& field, std::vector<std::string>& conditions) const;
-
-  std::string artifacts_query(const char* base_query) const;
-
-  std::string dependencies_query(const char* base_query) const;
-
-public:
-  explicit DependencyPrinter(Database2 &db) : db(db) {}
-
-  void filter_types(const std::vector<std::string>& included, const std::vector<std::string>& excluded);
-
-  size_t artifacts_count() const;
-  void each_artifact_id(std::function<void (long long id)> cbk) const;
-  void each_artifact_name(std::function<void (long long id, const std::string& name)> cbk) const;
-  void each_artifact_type(std::function<void (long long id, const std::string& type)> cbk) const;
-
-  size_t dependencies_count() const;
-  void each_dependency(std::function<void (long long, long long, long long)> cbk) const;
-};
-
-void DependencyPrinter::filter_types(const std::vector<std::string>& included, const std::vector<std::string>& excluded) {
+std::set<Dependency> get_all_dependencies(Database2& db,
+                                          const std::vector<std::string>& included,
+                                          const std::vector<std::string>& excluded)
+{
   std::stringstream ss;
+  ss << "select dependee_id, dependency_id from dependencies";
+  if (!included.empty() || !excluded.empty())
+    ss << " where";
 
   if (!included.empty()) {
-    ss << "in " << in_expr(included);
-    included_types_in_expr = ss.str();
-
-    ss.clear();
+    ss << " artifacts.type in " << in_expr(included);
   }
 
   if (!excluded.empty()) {
-    ss << "not in " << in_expr(excluded);
-    excluded_types_in_expr = ss.str();
+    if (!included.empty())
+      ss << " and";
+
+    ss << " artifacts.type not in " << in_expr(excluded);
   }
+
+  std::set<Dependency> dependencies;
+  auto stm = db.statement(ss.str());
+  while (stm.executeStep()) {
+    dependencies.emplace(stm.getColumn(0).getInt64(), stm.getColumn(1).getInt64());
+  }
+
+  return dependencies;
 }
 
-void DependencyPrinter::type_conditions(const std::string& field, std::vector<std::string>& conditions) const {
-  if (!included_types_in_expr.empty()) conditions.emplace_back(field + " " + included_types_in_expr);
-  if (!excluded_types_in_expr.empty()) conditions.emplace_back(field + " " + excluded_types_in_expr);
-}
-
-std::string DependencyPrinter::artifacts_query(const char* base_query) const {
+SQLite::Statement build_get_depend_stm(Database2& db,
+                                       const std::string& select_field,
+                                       const std::string& match_field,
+                                       const std::vector<std::string>& included,
+                                       const std::vector<std::string>& excluded)
+{
   std::stringstream ss;
-  ss << base_query;
+  ss << "select " << select_field << " from dependencies";
 
-  std::vector<std::string> conditions; type_conditions("artifacts.type", conditions);
+  if (!included.empty() || !excluded.empty())
+    ss << " inner join artifacts on artifacts.id = dependencies." << select_field;
 
-  if (!conditions.empty()) {
-    ss << "\nwhere ";
-    std::copy(conditions.cbegin(), conditions.cend(), infix_ostream_iterator<std::string>(ss, "\nand "));
+  ss << " where " << match_field << " = ?";
+
+  if (!included.empty())
+    ss << " and artifacts.type in " << in_expr(included);
+
+  if (!excluded.empty())
+    ss << " and artifacts.type not in " << in_expr(excluded);
+
+  return db.statement(ss.str());
+}
+
+std::set<Dependency> get_all_dependencies_for(Database2& db,
+                                              long long artifact_id,
+                                              const std::vector<std::string>& included,
+                                              const std::vector<std::string>& excluded)
+{
+  SQLite::Statement dependencies_stm = build_get_depend_stm(db, "dependency_id", "dependee_id", included, excluded);
+
+  std::set<Dependency> dependencies;
+  std::set<long long> visited, queue = {artifact_id};
+
+  while(!queue.empty()) {
+    auto last = std::prev(queue.end());
+    long long current_dependee_id = *last;
+    queue.erase(last);
+
+    if (visited.find(current_dependee_id) == visited.end()) {
+      dependencies_stm.bind(1, current_dependee_id);
+
+      for(long long dependency_id : Database2::get_ids(dependencies_stm)) {
+        dependencies.emplace(current_dependee_id, dependency_id);
+
+        queue.insert(dependency_id);
+      }
+    }
+
+    visited.insert(current_dependee_id);
   }
 
-  return ss.str();
+  return dependencies;
 }
 
-std::string DependencyPrinter::dependencies_query(const char* base_query) const {
-  std::stringstream ss;
-  ss << base_query;
+std::set<Dependency> get_all_dependees_for(Database2& db,
+                                           long long artifact_id,
+                                           const std::vector<std::string>& included,
+                                           const std::vector<std::string>& excluded)
+{
+  SQLite::Statement dependees_stm = build_get_depend_stm(db, "dependee_id", "dependency_id", included, excluded);
 
-  std::vector<std::string> conditions; type_conditions("la.type", conditions); type_conditions("ra.type", conditions);
+  std::set<Dependency> dependencies;
+  std::set<long long> visited, queue = {artifact_id};
 
-  if (!conditions.empty()) {
-    ss << "\ninner join artifacts as la on la.id = dependencies.dependee_id";
-    ss << "\ninner join artifacts as ra on ra.id = dependencies.dependency_id";
-    ss << "\nwhere ";
-    std::copy(conditions.cbegin(), conditions.cend(), infix_ostream_iterator<std::string>(ss, "\nand "));
+  while(!queue.empty()) {
+    auto last = std::prev(queue.end());
+    long long current_dependency_id = *last;
+    queue.erase(last);
+
+    if (visited.find(current_dependency_id) == visited.end()) {
+      dependees_stm.bind(1, current_dependency_id);
+
+      for(long long dependee_id : Database2::get_ids(dependees_stm)) {
+        dependencies.emplace(current_dependency_id, dependee_id);
+
+        queue.insert(dependee_id);
+      }
+    }
+
+    visited.insert(current_dependency_id);
   }
 
-  return ss.str();
+  return dependencies;
 }
 
-size_t DependencyPrinter::artifacts_count() const {
-  return db.database().execAndGet(artifacts_query("select count(*) from artifacts")).getInt64();
-}
+class DependencyPrinter {
+protected:
+  Database2 &db;
+  std::set<Dependency> dependencies;
 
-void DependencyPrinter::each_artifact_id(std::function<void (const long long)> cbk) const {
-  SQLite::Statement q(db.database(), artifacts_query("select id from artifacts"));
-  while (q.executeStep()) { cbk(q.getColumn(0).getInt64()); }
-}
+public:
+  DependencyPrinter(Database2 &db, std::set<Dependency> dependencies)
+    : db(db)
+    , dependencies(std::move(dependencies))
+  {}
 
-void DependencyPrinter::each_artifact_name(std::function<void (const long long, const std::string&)> cbk) const {
-  SQLite::Statement q(db.database(), artifacts_query("select id, name from artifacts"));
-  while (q.executeStep()) { cbk(q.getColumn(0).getInt64(), q.getColumn(1).getString()); }
-}
+  void each_dependency(std::function<void (const Dependency&)> cbk) const {
+    std::for_each(dependencies.cbegin(), dependencies.cend(), cbk);
+  }
 
-void DependencyPrinter::each_artifact_type(std::function<void (const long long, const std::string&)> cbk) const {
-  SQLite::Statement q(db.database(), artifacts_query("select id, type from artifacts"));
-  while (q.executeStep()) { cbk(q.getColumn(0).getInt64(), q.getColumn(1).getString()); }
-}
-
-size_t DependencyPrinter::dependencies_count() const {
-  return db.database().execAndGet(dependencies_query("select count(*) from dependencies")).getInt64();
-}
-
-void DependencyPrinter::each_dependency(std::function<void (long long, long long, long long)> cbk) const {
-  SQLite::Statement q(db.database(), dependencies_query("select dependencies.id, dependencies.dependee_id, dependencies.dependency_id from dependencies"));
-  while (q.executeStep()) { cbk(q.getColumn(0).getInt64(), q.getColumn(1).getInt64(), q.getColumn(2).getInt64()); }
-}
+  std::set<long long> get_artifact_ids() const {
+    std::set<long long> ids;
+    for(const Dependency& d : dependencies) {
+      ids.insert(d.dependee_id);
+      ids.insert(d.dependency_id);
+    }
+    return ids;
+  }
+};
 
 class TLPDependencyPrinter : public DependencyPrinter {
 public:
   using DependencyPrinter::DependencyPrinter;
 
+  struct Artifact {
+    size_t id;
+    std::string name;
+    std::string color;
+    Artifact(size_t id, std::string name, std::string color)
+      : id(id), name(std::move(name)), color(std::move(color))
+    {}
+  };
+
+  std::string mapping_query() const;
+  std::map<long long, Artifact> get_mapping() const;
+
   void print(std::ostream& out);
 };
 
+std::string TLPDependencyPrinter::mapping_query() const
+{
+  std::stringstream ss;
+  const std::set<long long> artifact_ids = get_artifact_ids();
+  ss << "select id, name, type from artifacts where id in " << in_expr(std::vector<long long>(artifact_ids.cbegin(), artifact_ids.cend()));
+  return ss.str();
+}
+
+std::map<long long, TLPDependencyPrinter::Artifact> TLPDependencyPrinter::get_mapping() const
+{
+  std::map<long long, Artifact> mapping;
+
+  SQLite::Statement q = db.statement(mapping_query());
+
+  size_t i = 0;
+  while (q.executeStep()) {
+    mapping.emplace(q.getColumn(0).getInt64(),
+                    Artifact(i++,
+                             bfs::path(q.getColumn(1).getString()).filename().string(),
+                             node_color.at(q.getColumn(2).getString())
+                             )
+                    );
+  }
+
+  return mapping;
+}
+
 void TLPDependencyPrinter::print(std::ostream &out) {
+  const std::map<long long, Artifact> mapping = get_mapping();
+
   out << "(tlp \"2.3\"\n";
 
-  const int nb_nodes = artifacts_count();
-  std::cout << "(nb_nodes " << nb_nodes << ")\n";
-  std::cout << "(nodes 0.." << (nb_nodes - 1) << ")\n";
+  std::cout << "(nb_nodes " << mapping.size() << ")\n";
+  std::cout << "(nodes 0.." << (mapping.size() - 1) << ")\n";
 
-  std::map<long long, long long> nodes;
-  {
-    long long i = 0;
-    each_artifact_id([&i, &nodes](const long long id){ nodes[id] = i++; });
-  }
+  std::cout << "(nb_edges " << dependencies.size() << ")\n";
 
-  const int nb_edges = dependencies_count();
-  std::cout << "(nb_edges " << nb_edges << ")\n";
-
-  {
-    long long i = 0;
-    each_dependency([&i, &out, &nodes](long long, long long dependee_id, long long dependency_id){
-      out << "(edge " << i++ << " " << nodes[dependee_id] << " " << nodes[dependency_id] << ")\n";
-    });
-  }
+  each_dependency([i=0ul, &out, &mapping] (const Dependency& dependency) mutable {
+    out << "(edge " << i++ << " " << mapping.at(dependency.dependee_id).id << " " << mapping.at(dependency.dependency_id).id << ")\n";
+  });
 
   out << "(property 0 string \"viewLabel\"\n"
          "(default \"\" \"\")\n";
-  each_artifact_name([&out, &nodes](const long long id, const bfs::path& path){
-    out << "(node " << nodes[id] << " \"" << path.filename().string() << "\")\n";
+  std::for_each(mapping.begin(), mapping.end(), [&out](const std::pair<long long, Artifact>& node){
+    out << "(node " << node.second.id << " \"" << node.second.name << "\")\n";
   });
   out << ")\n";
 
   out << "(property 0 color \"viewColor\"\n"
          "(default \"(255,95,95,255)\" \"(180,180,180,255)\")\n";
-  each_artifact_type([&out, &nodes](const long long id, const std::string& type){
-    out << "(node " << nodes[id] << " \"" << node_color[type] << "\")\n";
+  std::for_each(mapping.begin(), mapping.end(), [&out](const std::pair<long long, Artifact>& node){
+    out << "(node " << node.second.id << " \"" << node.second.color << "\")\n";
   });
   out << ")\n";
 
@@ -189,6 +254,12 @@ boost::program_options::options_description Export_Dependencies_Command::options
       ("not-type",
        bpo::value<std::vector<std::string>>()->multitoken()->default_value({}, ""),
        "Only consider artifacts not matching those types.")
+      ("artifact",
+       bpo::value<std::string>(),
+       "Artifact to export.")
+      ("format",
+       bpo::value<std::string>()->default_value("tlp"),
+       "Export format (tlp, dot).")
       ;
 
   return opt;
@@ -214,9 +285,28 @@ int Export_Dependencies_Command::execute(const std::vector<std::string>& args) c
 
   Database2 db(vm["db"].as<std::string>());
 
-  TLPDependencyPrinter printer(db);
-  printer.filter_types(vm["type"].as<std::vector<std::string>>(), vm["not-type"].as<std::vector<std::string>>());
-  printer.print(std::cout);
+  auto format = vm["format"].as<std::string>();
+  if (format == "tlp") {
+    if (vm.count("artifact") == 0) {
+      std::set<Dependency> dependencies = get_all_dependencies(db,
+                                                               vm["type"].as<std::vector<std::string>>(),
+                                                               vm["not-type"].as<std::vector<std::string>>());
+
+      TLPDependencyPrinter printer(db, std::move(dependencies));
+      printer.print(std::cout);
+    } else {
+      long long id = db.artifact_id_by_name(vm["artifact"].as<std::string>());
+      std::set<Dependency> dependencies = get_all_dependencies_for(db,
+                                                                   id,
+                                                                   vm["type"].as<std::vector<std::string>>(),
+                                                                   vm["not-type"].as<std::vector<std::string>>());
+
+      TLPDependencyPrinter printer(db, std::move(dependencies));
+      printer.print(std::cout);
+    }
+  } else if (format == "dot") {
+    std::cout << "dot" << std::endl;
+  }
 
   return 0;
 }

@@ -4,6 +4,10 @@
 #include "SymbolReference.hxx"
 #include "ArtifactSymbols.hxx"
 #include <SQLiteCpp/SQLiteCpp.h>
+
+#include <set>
+#include <vector>
+#include <utility>
 #include <functional>
 #include <boost/noncopyable.hpp>
 
@@ -24,6 +28,31 @@ public:
   inline T * operator->() const { return get(); }
 };
 
+class Dependency {
+public:
+  long long dependee_id, dependency_id;
+  Dependency(long long dependee_id, long long dependency_id)
+    : dependee_id(dependee_id)
+    , dependency_id(dependency_id)
+  {}
+};
+
+namespace std {
+
+template<> struct less<Dependency>
+{
+  bool operator()(const Dependency& lhs, const Dependency& rhs) const {
+    if (lhs.dependee_id < rhs.dependee_id)
+      return true;
+    else if (lhs.dependee_id == rhs.dependee_id)
+      return lhs.dependency_id < rhs.dependency_id;
+    else
+      return false;
+  }
+};
+
+} // namespace std
+
 class Database2 {
 public:
   SQLite::Database db;
@@ -35,6 +64,8 @@ private:
   Lazy<SQLite::Statement> symbol_id_by_name_stm;
   Lazy<SQLite::Statement> create_symbol_reference_stm;
   Lazy<SQLite::Statement> create_dependency_stm;
+  Lazy<SQLite::Statement> find_dependencies_stm;
+  Lazy<SQLite::Statement> find_dependees_stm;
 
 public:
   explicit Database2(const std::string& file);
@@ -45,12 +76,17 @@ public:
   void truncate_symbol_references();
 
   SQLite::Database& database() { return db; };
+  SQLite::Statement statement(const std::string& query);
 
   long long last_id();
 
   void create_artifact(const std::string& name, const std::string& type);
 
-  int artifact_id_by_name(const std::string& name);
+  long long artifact_id_by_name(const std::string& name);
+
+  std::string artifact_name_by_id(long long id);
+
+  std::string artifact_type_by_id(long long id);
 
   void create_symbol(const std::string& name);
 
@@ -64,8 +100,15 @@ public:
 
   void create_dependency(long long dependee_id, long long dependency_id);
 
+  static long long get_id(SQLite::Statement& stm);
+  static std::vector<long long> get_ids(SQLite::Statement& stm);
+
+  static std::string get_string(SQLite::Statement& stm);
+
 private:
-  long long get_id(SQLite::Statement& stm);
+  std::set<Dependency> find_dependencies(long long dependee_id);
+
+  std::set<Dependency> find_dependees(long long dependency_id);
 };
 
 #endif /* DATABASE2_HXX */

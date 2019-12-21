@@ -13,6 +13,8 @@ Database2::Database2(const std::string& file)
   , symbol_id_by_name_stm(LAZYSTM("select id from symbols where name = ?"))
   , create_symbol_reference_stm(LAZYSTM("insert into symbol_references (artifact_id, symbol_id, category, type, size) values (?, ?, ?, ?, ?)"))
   , create_dependency_stm(LAZYSTM("insert into dependencies (dependee_id, dependency_id) values (?, ?)"))
+  , find_dependencies_stm(LAZYSTM("select dependency_id from dependencies where dependee_id = ?"))
+  , find_dependees_stm(LAZYSTM("select dependee_id from dependencies where dependency_id = ?"))
 {
   db.exec("PRAGMA encoding='UTF-8';");
   db.exec("PRAGMA journal_mode=WAL;");
@@ -71,6 +73,11 @@ void Database2::truncate_symbol_references() {
   db.exec("delete from symbol_references;");
 }
 
+SQLite::Statement Database2::statement(const std::string& query)
+{
+  return SQLite::Statement(db, query);
+}
+
 long long Database2::last_id()
 {
   return db.getLastInsertRowid();
@@ -86,7 +93,7 @@ void Database2::create_artifact(const std::string& name, const std::string& type
   stm.clearBindings();
 }
 
-int Database2::artifact_id_by_name(const std::string& name) {
+long long Database2::artifact_id_by_name(const std::string& name) {
   auto& stm = *artifact_id_by_name_stm;
 
   stm.bind(1, name);
@@ -175,4 +182,67 @@ long long Database2::get_id(SQLite::Statement& stm) {
   stm.clearBindings();
 
   return id;
+}
+
+std::vector<long long> Database2::get_ids(SQLite::Statement& stm)
+{
+  std::vector<long long> ids;
+
+  while (stm.executeStep()) {
+    ids.push_back(stm.getColumn(0).getInt64());
+  }
+
+  stm.reset();
+  stm.clearBindings();
+
+  return ids;
+}
+
+std::string Database2::get_string(SQLite::Statement& stm)
+{
+  std::string str;
+
+  if(stm.executeStep()) {
+    str = stm.getColumn(0).getString();
+  }
+
+  stm.reset();
+  stm.clearBindings();
+
+  return str;
+}
+
+std::set<Dependency> Database2::find_dependencies(long long dependee_id)
+{
+  auto& stm = *find_dependencies_stm;
+
+  stm.bind(1, dependee_id);
+
+  std::set<Dependency> dependencies;
+  while (stm.executeStep()) {
+    dependencies.emplace(dependee_id, stm.getColumn(0).getInt64());
+  }
+
+  stm.reset();
+  stm.clearBindings();
+
+  return dependencies;
+}
+
+std::set<Dependency> Database2::find_dependees(long long dependency_id)
+{
+  auto& stm = *find_dependees_stm;
+
+  stm.bind(1, dependency_id);
+
+  std::set<Dependency> dependees;
+  while (stm.executeStep()) {
+    dependees.emplace(stm.getColumn(0).getInt64(), dependency_id);
+  }
+
+  stm.exec();
+  stm.reset();
+  stm.clearBindings();
+
+  return dependees;
 }

@@ -12,13 +12,6 @@ std::ostream&operator<<(std::ostream& out, const quoted_string_literal_manip& m)
   return out << std::quoted(m.value.c_str(), '\'', '\'');
 }
 
-template<typename T>
-std::ostream& operator<<(std::ostream& out, const csv_expr_manip<T>& m) {
-  if (m.values.size() > 1) std::copy(m.values.cbegin(), --m.values.cend(), std::ostream_iterator<T>(out, m.separator));
-  if (m.values.size() > 0) out << m.values.back();
-  return out;
-}
-
 template<>
 std::ostream& operator<<(std::ostream& out, const csv_expr_manip<std::string>& m) {
   if (m.values.size() > 1) std::transform(m.values.cbegin(), --m.values.cend(),

@@ -33,7 +33,11 @@ csv_expr_manip<T> csv_expr(const std::vector<T>& values, const char* separator) 
 }
 
 template<typename T>
-std::ostream& operator<<(std::ostream& out, const csv_expr_manip<T>& m);
+std::ostream& operator<<(std::ostream& out, const csv_expr_manip<T>& m) {
+  if (m.values.size() > 1) std::copy(m.values.cbegin(), --m.values.cend(), std::ostream_iterator<T>(out, m.separator));
+  if (m.values.size() > 0) out << m.values.back();
+  return out;
+}
 
 template<>
 std::ostream& operator<<(std::ostream& out, const csv_expr_manip<std::string>& m);
