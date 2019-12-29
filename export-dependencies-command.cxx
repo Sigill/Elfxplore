@@ -63,9 +63,10 @@ const std::map<std::string, std::array<unsigned char, 3>> node_color = {
   {"executable", {170,0,0}}
 };
 
-std::set<Dependency> get_all_dependencies(Database2& db,
-                                          const std::vector<std::string>& included,
-                                          const std::vector<std::string>& excluded)
+void get_all_dependencies(Database2& db,
+                          const std::vector<std::string>& included,
+                          const std::vector<std::string>& excluded,
+                          std::set<Dependency>& dependencies)
 {
   std::stringstream ss;
   ss << "select dependee_id, dependency_id from dependencies";
@@ -83,13 +84,10 @@ std::set<Dependency> get_all_dependencies(Database2& db,
     ss << " artifacts.type not in " << in_expr(excluded);
   }
 
-  std::set<Dependency> dependencies;
   auto stm = db.statement(ss.str());
   while (stm.executeStep()) {
     dependencies.emplace(stm.getColumn(0).getInt64(), stm.getColumn(1).getInt64());
   }
-
-  return dependencies;
 }
 
 SQLite::Statement build_get_depend_stm(Database2& db,
@@ -115,14 +113,14 @@ SQLite::Statement build_get_depend_stm(Database2& db,
   return db.statement(ss.str());
 }
 
-std::set<Dependency> get_all_dependencies_for(Database2& db,
-                                              long long artifact_id,
-                                              const std::vector<std::string>& included,
-                                              const std::vector<std::string>& excluded)
+void get_all_dependencies_for(Database2& db,
+                              long long artifact_id,
+                              const std::vector<std::string>& included,
+                              const std::vector<std::string>& excluded,
+                              std::set<Dependency>& dependencies)
 {
   SQLite::Statement dependencies_stm = build_get_depend_stm(db, "dependency_id", "dependee_id", included, excluded);
 
-  std::set<Dependency> dependencies;
   std::set<long long> visited, queue = {artifact_id};
 
   while(!queue.empty()) {
@@ -142,18 +140,16 @@ std::set<Dependency> get_all_dependencies_for(Database2& db,
 
     visited.insert(current_dependee_id);
   }
-
-  return dependencies;
 }
 
-std::set<Dependency> get_all_dependees_for(Database2& db,
-                                           long long artifact_id,
-                                           const std::vector<std::string>& included,
-                                           const std::vector<std::string>& excluded)
+void get_all_dependees_for(Database2& db,
+                           long long artifact_id,
+                           const std::vector<std::string>& included,
+                           const std::vector<std::string>& excluded,
+                           std::set<Dependency>& dependencies)
 {
   SQLite::Statement dependees_stm = build_get_depend_stm(db, "dependee_id", "dependency_id", included, excluded);
 
-  std::set<Dependency> dependencies;
   std::set<long long> visited, queue = {artifact_id};
 
   while(!queue.empty()) {
@@ -165,7 +161,7 @@ std::set<Dependency> get_all_dependees_for(Database2& db,
       dependees_stm.bind(1, current_dependency_id);
 
       for(long long dependee_id : Database2::get_ids(dependees_stm)) {
-        dependencies.emplace(current_dependency_id, dependee_id);
+        dependencies.emplace(dependee_id, current_dependency_id);
 
         queue.insert(dependee_id);
       }
@@ -173,8 +169,6 @@ std::set<Dependency> get_all_dependees_for(Database2& db,
 
     visited.insert(current_dependency_id);
   }
-
-  return dependencies;
 }
 
 struct Artifact {
@@ -204,7 +198,7 @@ std::string build_artifacts_query(const std::set<long long>& artifacts)
   return ss.str();
 }
 
-std::map<long long, Artifact> map_artifacts(Database2& db, const std::set<Dependency>& dependencies)
+std::map<long long, Artifact> map_artifacts(Database2& db, const std::set<Dependency>& dependencies, const bool path)
 {
   std::map<long long, Artifact> mapping;
 
@@ -212,10 +206,14 @@ std::map<long long, Artifact> map_artifacts(Database2& db, const std::set<Depend
 
   size_t i = 0;
   while (q.executeStep()) {
+    std::string label = q.getColumn(1).getString();
+    if (path == false)
+      label = bfs::path(label).filename().string();
+
     mapping.emplace(std::piecewise_construct,
                     std::forward_as_tuple(q.getColumn(0).getInt64()),
                     std::forward_as_tuple(i++,
-                                          bfs::path(q.getColumn(1).getString()).filename().string(),
+                                          label,
                                           node_color.at(q.getColumn(2).getString())
                                           )
                     );
@@ -225,36 +223,34 @@ std::map<long long, Artifact> map_artifacts(Database2& db, const std::set<Depend
 }
 
 struct tlp_file_format {
-  Database2& db;
+  const std::map<long long, Artifact>& artifacts;
   const std::set<Dependency>& dependencies;
 
-  tlp_file_format(Database2& db, const std::set<Dependency>& dependencies)
-    : db(db), dependencies(dependencies) {}
+  tlp_file_format(const std::map<long long, Artifact>& artifacts, const std::set<Dependency>& dependencies)
+    : artifacts(artifacts), dependencies(dependencies) {}
 
   std::ostream& operator()(std::ostream& out) const {
-    const std::map<long long, Artifact> mapping = map_artifacts(db, dependencies);
-
     out << "(tlp \"2.3\"\n";
 
-    std::cout << "(nb_nodes " << mapping.size() << ")\n";
-    std::cout << "(nodes 0.." << (mapping.size() - 1) << ")\n";
+    std::cout << "(nb_nodes " << artifacts.size() << ")\n";
+    std::cout << "(nodes 0.." << (artifacts.size() - 1) << ")\n";
 
     std::cout << "(nb_edges " << dependencies.size() << ")\n";
 
-    std::for_each(dependencies.cbegin(), dependencies.cend(), [i=0ul, &out, &mapping] (const Dependency& dependency) mutable {
-      out << "(edge " << i++ << " " << mapping.at(dependency.dependee_id).id << " " << mapping.at(dependency.dependency_id).id << ")\n";
+    std::for_each(dependencies.cbegin(), dependencies.cend(), [i=0ul, &out, this] (const Dependency& dependency) mutable {
+      out << "(edge " << i++ << " " << artifacts.at(dependency.dependee_id).id << " " << artifacts.at(dependency.dependency_id).id << ")\n";
     });
 
     out << "(property 0 string \"viewLabel\"\n"
            "(default \"\" \"\")\n";
-    std::for_each(mapping.begin(), mapping.end(), [&out](const std::pair<long long, Artifact>& node){
+    std::for_each(artifacts.begin(), artifacts.end(), [&out](const std::pair<long long, Artifact>& node){
       out << "(node " << node.second.id << " \"" << node.second.name << "\")\n";
     });
     out << ")\n";
 
     out << "(property 0 color \"viewColor\"\n"
            "(default \"(255,95,95,255)\" \"(180,180,180,255)\")\n";
-    std::for_each(mapping.begin(), mapping.end(), [&out](const std::pair<long long, Artifact>& node){
+    std::for_each(artifacts.begin(), artifacts.end(), [&out](const std::pair<long long, Artifact>& node){
       out << "(node " << node.second.id << " \"" << tlp_fmt(node.second.color) << "\")\n";
     });
     out << ")\n";
@@ -270,23 +266,22 @@ std::ostream& operator<<(std::ostream& out, const tlp_file_format& data) {
 }
 
 struct dot_file_format {
-  Database2& db;
+  const std::map<long long, Artifact>& artifacts;
   const std::set<Dependency>& dependencies;
 
-  dot_file_format(Database2& db, const std::set<Dependency>& dependencies)
-    : db(db), dependencies(dependencies) {}
+  dot_file_format(const std::map<long long, Artifact>& artifacts, const std::set<Dependency>& dependencies)
+    : artifacts(artifacts), dependencies(dependencies) {}
 
   std::ostream& operator()(std::ostream& out) const {
-    const std::map<long long, Artifact> mapping = map_artifacts(db, dependencies);
+    out << "digraph g {\n"
+        << "\tnode [style=filled]\n";
 
-    out << "digraph g {\n";
-
-    std::for_each(mapping.begin(), mapping.end(), [&out](const std::pair<long long, Artifact>& node){
-      out << "\tn" << node.second.id << " [label=\"" << node.second.name << "\", color=\"" << hex_fmt(node.second.color) << "\"]\n";
+    std::for_each(artifacts.begin(), artifacts.end(), [&out](const std::pair<long long, Artifact>& node){
+      out << "\tn" << node.second.id << " [label=\"" << node.second.name << "\", fillcolor=\"" << hex_fmt(node.second.color) << "\"]\n";
     });
 
-    std::for_each(dependencies.cbegin(), dependencies.cend(), [&out, &mapping] (const Dependency& dependency) {
-      out << "\tn" << mapping.at(dependency.dependee_id).id << " -> n" << mapping.at(dependency.dependency_id).id << "\n";
+    std::for_each(dependencies.cbegin(), dependencies.cend(), [&out, this] (const Dependency& dependency) {
+      out << "\tn" << artifacts.at(dependency.dependee_id).id << " -> n" << artifacts.at(dependency.dependency_id).id << "\n";
     });
 
     out << "}";
@@ -297,6 +292,15 @@ struct dot_file_format {
 
 std::ostream& operator<<(std::ostream& out, const dot_file_format& data) {
   return data(out);
+}
+
+void print(const std::map<long long, Artifact>& artifacts, const std::set<Dependency>& dependencies, std::ostream& out, const std::string& format)
+{
+  if (format == "tlp") {
+    out << tlp_file_format(artifacts, dependencies) << std::endl;
+  } else if (format == "dot") {
+    out << dot_file_format(artifacts, dependencies) << std::endl;
+  }
 }
 
 } // anonymous namespace
@@ -317,6 +321,9 @@ boost::program_options::options_description Export_Dependencies_Command::options
       ("format",
        bpo::value<std::string>()->default_value("tlp"),
        "Export format (tlp, dot).")
+      ("dependencies", "Export dependencies.")
+      ("dependees", "Export dependees.")
+      ("path", "Print full path.")
       ;
 
   return opt;
@@ -342,31 +349,29 @@ int Export_Dependencies_Command::execute(const std::vector<std::string>& args) c
 
   Database2 db(vm["db"].as<std::string>());
 
-  auto format = vm["format"].as<std::string>();
+  const std::string format = vm["format"].as<std::string>();
+  const std::vector<std::string> types = vm["type"].as<std::vector<std::string>>(),
+                             not_types = vm["not-type"].as<std::vector<std::string>>();
+
+  std::set<Dependency> dependencies;
 
   if (vm.count("artifact") == 0) {
-    std::set<Dependency> dependencies = get_all_dependencies(db,
-                                                             vm["type"].as<std::vector<std::string>>(),
-                                                             vm["not-type"].as<std::vector<std::string>>());
-
-    if (format == "tlp") {
-      std::cout << tlp_file_format(db, dependencies) << std::endl;
-    } else if (format == "dot") {
-      std::cout << dot_file_format(db, dependencies) << std::endl;
-    }
+    get_all_dependencies(db, types, not_types, dependencies);
   } else {
     long long id = db.artifact_id_by_name(vm["artifact"].as<std::string>());
-    std::set<Dependency> dependencies = get_all_dependencies_for(db,
-                                                                 id,
-                                                                 vm["type"].as<std::vector<std::string>>(),
-                                                                 vm["not-type"].as<std::vector<std::string>>());
 
-    if (format == "tlp") {
-      std::cout << tlp_file_format(db, dependencies) << std::endl;
-    } else if (format == "dot") {
-      std::cout << dot_file_format(db, dependencies) << std::endl;
+    if (vm.count("dependencies") == vm.count("dependees") || vm.count("dependencies") == 1) {
+      get_all_dependencies_for(db, id, types, not_types, dependencies);
+    }
+
+    if (vm.count("dependencies") == vm.count("dependees") || vm.count("dependees") == 1) {
+      get_all_dependees_for(db, id, types, not_types, dependencies);
     }
   }
+
+  const std::map<long long, Artifact> artifacts = map_artifacts(db, dependencies, vm.count("path") > 0);
+
+  print(artifacts, dependencies, std::cout, format);
 
   return 0;
 }
