@@ -9,6 +9,7 @@
 #include "extract-dependencies-command.hxx"
 #include "analyse-symbols-command.hxx"
 #include "export-dependencies-command.hxx"
+#include "artifacts-command.hxx"
 
 namespace bpo = boost::program_options;
 
@@ -36,6 +37,8 @@ std::unique_ptr<Command> factory(const std::vector<std::string>& command) {
     return std::make_unique<Analyse_Symbols_Command>(command);
   } else if (command.back() == "export-dependencies") {
     return std::make_unique<Export_Dependencies_Command>(command);
+  } else if (command.back() == "artifacts") {
+    return std::make_unique<ArtifactsCommand>(command);
   }
 
   return nullptr;
