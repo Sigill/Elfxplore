@@ -100,15 +100,14 @@ public:
 
   void create_dependency(long long dependee_id, long long dependency_id);
 
+  std::vector<long long> dependencies(long long dependee_id);
+
+  std::vector<long long> dependees(long long dependency_id);
+
   static long long get_id(SQLite::Statement& stm);
   static std::vector<long long> get_ids(SQLite::Statement& stm);
 
   static std::string get_string(SQLite::Statement& stm);
-
-private:
-  std::set<Dependency> find_dependencies(long long dependee_id);
-
-  std::set<Dependency> find_dependees(long long dependency_id);
 };
 
 #endif /* DATABASE2_HXX */

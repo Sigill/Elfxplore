@@ -212,37 +212,20 @@ std::string Database2::get_string(SQLite::Statement& stm)
   return str;
 }
 
-std::set<Dependency> Database2::find_dependencies(long long dependee_id)
+std::vector<long long> Database2::dependencies(long long dependee_id)
 {
   auto& stm = *find_dependencies_stm;
 
   stm.bind(1, dependee_id);
 
-  std::set<Dependency> dependencies;
-  while (stm.executeStep()) {
-    dependencies.emplace(dependee_id, stm.getColumn(0).getInt64());
-  }
-
-  stm.reset();
-  stm.clearBindings();
-
-  return dependencies;
+  return get_ids(stm);
 }
 
-std::set<Dependency> Database2::find_dependees(long long dependency_id)
+std::vector<long long> Database2::dependees(long long dependency_id)
 {
   auto& stm = *find_dependees_stm;
 
   stm.bind(1, dependency_id);
 
-  std::set<Dependency> dependees;
-  while (stm.executeStep()) {
-    dependees.emplace(stm.getColumn(0).getInt64(), dependency_id);
-  }
-
-  stm.exec();
-  stm.reset();
-  stm.clearBindings();
-
-  return dependees;
+  return get_ids(stm);
 }

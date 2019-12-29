@@ -64,24 +64,24 @@ const std::map<std::string, std::array<unsigned char, 3>> node_color = {
 };
 
 void get_all_dependencies(Database2& db,
-                          const std::vector<std::string>& included,
-                          const std::vector<std::string>& excluded,
+                          const std::vector<std::string>& included_types,
+                          const std::vector<std::string>& excluded_types,
                           std::set<Dependency>& dependencies)
 {
   std::stringstream ss;
   ss << "select dependee_id, dependency_id from dependencies";
-  if (!included.empty() || !excluded.empty())
+  if (!included_types.empty() || !excluded_types.empty())
     ss << " where";
 
-  if (!included.empty()) {
-    ss << " artifacts.type in " << in_expr(included);
+  if (!included_types.empty()) {
+    ss << " artifacts.type in " << in_expr(included_types);
   }
 
-  if (!excluded.empty()) {
-    if (!included.empty())
+  if (!excluded_types.empty()) {
+    if (!included_types.empty())
       ss << " and";
 
-    ss << " artifacts.type not in " << in_expr(excluded);
+    ss << " artifacts.type not in " << in_expr(excluded_types);
   }
 
   auto stm = db.statement(ss.str());
@@ -93,33 +93,60 @@ void get_all_dependencies(Database2& db,
 SQLite::Statement build_get_depend_stm(Database2& db,
                                        const std::string& select_field,
                                        const std::string& match_field,
-                                       const std::vector<std::string>& included,
-                                       const std::vector<std::string>& excluded)
+                                       const std::vector<std::string>& included_types,
+                                       const std::vector<std::string>& excluded_types)
 {
   std::stringstream ss;
   ss << "select " << select_field << " from dependencies";
 
-  if (!included.empty() || !excluded.empty())
+  if (!included_types.empty() || !excluded_types.empty())
     ss << " inner join artifacts on artifacts.id = dependencies." << select_field;
 
   ss << " where " << match_field << " = ?";
 
-  if (!included.empty())
-    ss << " and artifacts.type in " << in_expr(included);
+  if (!included_types.empty())
+    ss << " and artifacts.type in " << in_expr(included_types);
 
-  if (!excluded.empty())
-    ss << " and artifacts.type not in " << in_expr(excluded);
+  if (!excluded_types.empty())
+    ss << " and artifacts.type not in " << in_expr(excluded_types);
 
   return db.statement(ss.str());
 }
 
+void get_dependencies_for(Database2& db,
+                          long long artifact_id,
+                          const std::vector<std::string>& included_types,
+                          const std::vector<std::string>& excluded_types,
+                          std::set<Dependency>& dependencies)
+{
+  SQLite::Statement dependencies_stm = build_get_depend_stm(db, "dependency_id", "dependee_id", included_types, excluded_types);
+  dependencies_stm.bind(1, artifact_id);
+  for(long long dependency_id : Database2::get_ids(dependencies_stm)) {
+    dependencies.emplace(artifact_id, dependency_id);
+  }
+}
+
+void get_dependees_for(Database2& db,
+                       long long artifact_id,
+                       const std::vector<std::string>& included_types,
+                       const std::vector<std::string>& excluded_types,
+                       std::set<Dependency>& dependencies)
+{
+  SQLite::Statement dependees_stm = build_get_depend_stm(db, "dependee_id", "dependency_id", included_types, excluded_types);
+  dependees_stm.bind(1, artifact_id);
+
+  for(long long dependee_id : Database2::get_ids(dependees_stm)) {
+    dependencies.emplace(dependee_id, artifact_id);
+  }
+}
+
 void get_all_dependencies_for(Database2& db,
                               long long artifact_id,
-                              const std::vector<std::string>& included,
-                              const std::vector<std::string>& excluded,
+                              const std::vector<std::string>& included_types,
+                              const std::vector<std::string>& excluded_types,
                               std::set<Dependency>& dependencies)
 {
-  SQLite::Statement dependencies_stm = build_get_depend_stm(db, "dependency_id", "dependee_id", included, excluded);
+  SQLite::Statement dependencies_stm = build_get_depend_stm(db, "dependency_id", "dependee_id", included_types, excluded_types);
 
   std::set<long long> visited, queue = {artifact_id};
 
@@ -144,11 +171,11 @@ void get_all_dependencies_for(Database2& db,
 
 void get_all_dependees_for(Database2& db,
                            long long artifact_id,
-                           const std::vector<std::string>& included,
-                           const std::vector<std::string>& excluded,
+                           const std::vector<std::string>& included_types,
+                           const std::vector<std::string>& excluded_types,
                            std::set<Dependency>& dependencies)
 {
-  SQLite::Statement dependees_stm = build_get_depend_stm(db, "dependee_id", "dependency_id", included, excluded);
+  SQLite::Statement dependees_stm = build_get_depend_stm(db, "dependee_id", "dependency_id", included_types, excluded_types);
 
   std::set<long long> visited, queue = {artifact_id};
 
@@ -324,6 +351,7 @@ boost::program_options::options_description Export_Dependencies_Command::options
       ("dependencies", "Export dependencies.")
       ("dependees", "Export dependees.")
       ("path", "Print full path.")
+      ("follow,f", "Follow dependencies.")
       ;
 
   return opt;
@@ -350,22 +378,30 @@ int Export_Dependencies_Command::execute(const std::vector<std::string>& args) c
   Database2 db(vm["db"].as<std::string>());
 
   const std::string format = vm["format"].as<std::string>();
-  const std::vector<std::string> types = vm["type"].as<std::vector<std::string>>(),
-                             not_types = vm["not-type"].as<std::vector<std::string>>();
+  const std::vector<std::string> included_types = vm["type"].as<std::vector<std::string>>(),
+                                 excluded_types = vm["not-type"].as<std::vector<std::string>>();
 
   std::set<Dependency> dependencies;
 
   if (vm.count("artifact") == 0) {
-    get_all_dependencies(db, types, not_types, dependencies);
+    get_all_dependencies(db, included_types, excluded_types, dependencies);
   } else {
     long long id = db.artifact_id_by_name(vm["artifact"].as<std::string>());
+    bool export_dependencies = vm.count("dependencies") == vm.count("dependees") || vm.count("dependencies") == 1;
+    bool export_dependees = vm.count("dependencies") == vm.count("dependees") || vm.count("dependees") == 1;
 
-    if (vm.count("dependencies") == vm.count("dependees") || vm.count("dependencies") == 1) {
-      get_all_dependencies_for(db, id, types, not_types, dependencies);
-    }
+    if (vm.count("follow") > 0) {
+      if (export_dependencies)
+        get_all_dependencies_for(db, id, included_types, excluded_types, dependencies);
 
-    if (vm.count("dependencies") == vm.count("dependees") || vm.count("dependees") == 1) {
-      get_all_dependees_for(db, id, types, not_types, dependencies);
+      if (export_dependees)
+        get_all_dependees_for(db, id, included_types, excluded_types, dependencies);
+    } else {
+      if (export_dependencies)
+        get_dependencies_for(db, id, included_types, excluded_types, dependencies);
+
+      if (export_dependees)
+        get_dependees_for(db, id, included_types, excluded_types, dependencies);
     }
   }
 
