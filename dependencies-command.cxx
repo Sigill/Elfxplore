@@ -1,4 +1,4 @@
-#include "export-dependencies-command.hxx"
+#include "dependencies-command.hxx"
 
 #include <iostream>
 #include <sstream>
@@ -321,18 +321,40 @@ std::ostream& operator<<(std::ostream& out, const dot_file_format& data) {
   return data(out);
 }
 
+struct txt_format {
+  const std::map<long long, Artifact>& artifacts;
+  const std::set<Dependency>& dependencies;
+
+  txt_format(const std::map<long long, Artifact>& artifacts, const std::set<Dependency>& dependencies)
+    : artifacts(artifacts), dependencies(dependencies) {}
+
+  std::ostream& operator()(std::ostream& out) const {
+    std::for_each(dependencies.cbegin(), dependencies.cend(), [&out, this] (const Dependency& dependency) {
+      out << artifacts.at(dependency.dependee_id).name << " -> " << artifacts.at(dependency.dependency_id).name << "\n";
+    });
+
+    return out;
+  }
+};
+
+std::ostream& operator<<(std::ostream& out, const txt_format& data) {
+  return data(out);
+}
+
 void print(const std::map<long long, Artifact>& artifacts, const std::set<Dependency>& dependencies, std::ostream& out, const std::string& format)
 {
   if (format == "tlp") {
     out << tlp_file_format(artifacts, dependencies) << std::endl;
   } else if (format == "dot") {
     out << dot_file_format(artifacts, dependencies) << std::endl;
+  } else if (format == "txt") {
+    out << txt_format(artifacts, dependencies) << std::endl;
   }
 }
 
 } // anonymous namespace
 
-boost::program_options::options_description Export_Dependencies_Command::options() const
+boost::program_options::options_description Dependencies_Command::options() const
 {
   bpo::options_description opt = default_options();
   opt.add_options()
@@ -343,11 +365,11 @@ boost::program_options::options_description Export_Dependencies_Command::options
        bpo::value<std::vector<std::string>>()->multitoken()->default_value({}, ""),
        "Only consider artifacts not matching those types.")
       ("artifact",
-       bpo::value<std::string>(),
+       bpo::value<std::vector<std::string>>()->multitoken(),
        "Artifact to export.")
       ("format",
-       bpo::value<std::string>()->default_value("tlp"),
-       "Export format (tlp, dot).")
+       bpo::value<std::string>()->default_value("txt"),
+       "Export format: txt (default), tlp, dot.")
       ("dependencies", "Export dependencies.")
       ("dependees", "Export dependees.")
       ("path", "Print full path.")
@@ -357,12 +379,15 @@ boost::program_options::options_description Export_Dependencies_Command::options
   return opt;
 }
 
-int Export_Dependencies_Command::execute(const std::vector<std::string>& args) const
+int Dependencies_Command::execute(const std::vector<std::string>& args) const
 {
+  bpo::positional_options_description p;
+  p.add("artifact", -1);
+
   bpo::variables_map vm;
 
   try {
-    bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
+    bpo::store(bpo::command_line_parser(args).options(options()).positional(p).run(), vm);
 
     if (vm.count("help")) {
       usage(std::cout);
@@ -378,6 +403,15 @@ int Export_Dependencies_Command::execute(const std::vector<std::string>& args) c
   Database2 db(vm["db"].as<std::string>());
 
   const std::string format = vm["format"].as<std::string>();
+
+  if (!(format == "txt" || format == "tlp" || format == "dot")) {
+    std::cerr << "Invalid format: " << format << std::endl;
+    usage(std::cerr);
+    return -1;
+  }
+
+  const bool follow = vm.count("follow") > 0;
+
   const std::vector<std::string> included_types = vm["type"].as<std::vector<std::string>>(),
                                  excluded_types = vm["not-type"].as<std::vector<std::string>>();
 
@@ -386,22 +420,26 @@ int Export_Dependencies_Command::execute(const std::vector<std::string>& args) c
   if (vm.count("artifact") == 0) {
     get_all_dependencies(db, included_types, excluded_types, dependencies);
   } else {
-    long long id = db.artifact_id_by_name(vm["artifact"].as<std::string>());
-    bool export_dependencies = vm.count("dependencies") == vm.count("dependees") || vm.count("dependencies") == 1;
-    bool export_dependees = vm.count("dependencies") == vm.count("dependees") || vm.count("dependees") == 1;
+    const bool export_dependencies = vm.count("dependencies") == vm.count("dependees") || vm.count("dependencies") == 1;
+    const bool export_dependees = vm.count("dependencies") == vm.count("dependees") || vm.count("dependees") == 1;
 
-    if (vm.count("follow") > 0) {
-      if (export_dependencies)
-        get_all_dependencies_for(db, id, included_types, excluded_types, dependencies);
+    for(const std::string& artifact : vm["artifact"].as<std::vector<std::string>>())
+    {
+      const long long id = db.artifact_id_by_name(artifact);
 
-      if (export_dependees)
-        get_all_dependees_for(db, id, included_types, excluded_types, dependencies);
-    } else {
-      if (export_dependencies)
-        get_dependencies_for(db, id, included_types, excluded_types, dependencies);
+      if (follow) {
+        if (export_dependencies)
+          get_all_dependencies_for(db, id, included_types, excluded_types, dependencies);
 
-      if (export_dependees)
-        get_dependees_for(db, id, included_types, excluded_types, dependencies);
+        if (export_dependees)
+          get_all_dependees_for(db, id, included_types, excluded_types, dependencies);
+      } else {
+        if (export_dependencies)
+          get_dependencies_for(db, id, included_types, excluded_types, dependencies);
+
+        if (export_dependees)
+          get_dependees_for(db, id, included_types, excluded_types, dependencies);
+      }
     }
   }
 

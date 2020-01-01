@@ -19,7 +19,7 @@ add_executable(elfxplore
     command.cxx
     db-command.cxx
     extract-dependencies-command.cxx
-    export-dependencies-command.cxx
+    dependencies-command.cxx
     extract-symbols-command.cxx
     analyse-symbols-command.cxx
     artifacts-command.cxx
