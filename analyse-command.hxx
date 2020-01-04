@@ -6,7 +6,7 @@
 
 #include "command.hxx"
 
-class Analyse_Symbols_Command : public Command {
+class Analyse_Command : public Command {
 public:
   using Command::Command;
   boost::program_options::options_description options() const override;
