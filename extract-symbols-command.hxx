@@ -9,8 +9,8 @@
 class Extract_Symbols_Command : public Command {
 public:
   using Command::Command;
-  boost::program_options::options_description options() const override;
-  int execute(const std::vector<std::string>& args) const override;
+  boost::program_options::options_description options() override;
+  int execute(const std::vector<std::string>& args) override;
 };
 
 #endif // ANALYSE_SYMBOLS_COMMAND_HXX

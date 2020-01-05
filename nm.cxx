@@ -5,7 +5,9 @@
 
 namespace bp = boost::process;
 
-void nm(const std::string& file, SymbolReferenceSet& symbols, const std::string& options) {
+namespace {
+
+void nm_once(const std::string& file, SymbolReferenceSet& symbols, const std::string& options) {
 //  const std::regex symbol_regex("^.{16}(?: (.{16}))? (.) (.*$)");
 
   const std::string cmd = "nm " + options + " \"" + file + "\"";
@@ -54,6 +56,16 @@ void nm(const std::string& file, SymbolReferenceSet& symbols, const std::string&
   }
 
   c.wait();
+}
+
+} // anonymous namespace
+
+void nm(const std::string& file, SymbolReferenceSet& symbols, const std::string& options)
+{
+  nm_once(file, symbols, options);
+
+  if (symbols.empty())
+    nm_once(file, symbols, options + " -D");
 }
 
 SymbolReferenceSet nm(const std::string& file, const std::string& options) {

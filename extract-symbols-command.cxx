@@ -98,7 +98,7 @@ public:
 
 } // anonymous namespace
 
-boost::program_options::options_description Extract_Symbols_Command::options() const
+boost::program_options::options_description Extract_Symbols_Command::options()
 {
   bpo::options_description opt = default_options();
   opt.add_options()
@@ -115,7 +115,7 @@ boost::program_options::options_description Extract_Symbols_Command::options() c
   return opt;
 }
 
-int Extract_Symbols_Command::execute(const std::vector<std::string>& args) const
+int Extract_Symbols_Command::execute(const std::vector<std::string>& args)
 {
   bpo::positional_options_description p;
   p.add("artifacts", -1);

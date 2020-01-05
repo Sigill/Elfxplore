@@ -227,7 +227,7 @@ bool is_dependency_type(const std::string& type) {
 
 } // anonymous namespace
 
-boost::program_options::options_description Extract_Dependencies_Command::options() const
+boost::program_options::options_description Extract_Dependencies_Command::options()
 {
   bpo::options_description opt = default_options();
   opt.add_options()
@@ -240,7 +240,7 @@ boost::program_options::options_description Extract_Dependencies_Command::option
   return opt;
 }
 
-int Extract_Dependencies_Command::execute(const std::vector<std::string>& args) const
+int Extract_Dependencies_Command::execute(const std::vector<std::string>& args)
 {
   bpo::positional_options_description p;
   p.add("commands", -1);

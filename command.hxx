@@ -11,14 +11,15 @@ private:
   std::vector<std::string> mCommand;
 public:
   Command(const std::vector<std::string>& mCommand);
-  void usage(std::ostream& out) const;
-  virtual int execute(const std::vector<std::string>& args) const = 0;
+  void usage(std::ostream& out);
+  virtual int execute(const std::vector<std::string>& args) = 0;
 
 protected:
-  boost::program_options::options_description default_options() const;
+  bool mVerbose;
+  boost::program_options::options_description default_options();
 
 private:
-  virtual boost::program_options::options_description options() const = 0;
+  virtual boost::program_options::options_description options() = 0;
 };
 
 #endif // COMMAND_HXX

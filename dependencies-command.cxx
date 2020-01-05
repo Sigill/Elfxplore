@@ -90,36 +90,13 @@ void get_all_dependencies(Database2& db,
   }
 }
 
-SQLite::Statement build_get_depend_stm(Database2& db,
-                                       const std::string& select_field,
-                                       const std::string& match_field,
-                                       const std::vector<std::string>& included_types,
-                                       const std::vector<std::string>& excluded_types)
-{
-  std::stringstream ss;
-  ss << "select " << select_field << " from dependencies";
-
-  if (!included_types.empty() || !excluded_types.empty())
-    ss << " inner join artifacts on artifacts.id = dependencies." << select_field;
-
-  ss << " where " << match_field << " = ?";
-
-  if (!included_types.empty())
-    ss << " and artifacts.type in " << in_expr(included_types);
-
-  if (!excluded_types.empty())
-    ss << " and artifacts.type not in " << in_expr(excluded_types);
-
-  return db.statement(ss.str());
-}
-
 void get_dependencies_for(Database2& db,
                           long long artifact_id,
                           const std::vector<std::string>& included_types,
                           const std::vector<std::string>& excluded_types,
                           std::set<Dependency>& dependencies)
 {
-  SQLite::Statement dependencies_stm = build_get_depend_stm(db, "dependency_id", "dependee_id", included_types, excluded_types);
+  SQLite::Statement dependencies_stm = db.build_get_depend_stm("dependency_id", "dependee_id", included_types, excluded_types);
   dependencies_stm.bind(1, artifact_id);
   for(long long dependency_id : Database2::get_ids(dependencies_stm)) {
     dependencies.emplace(artifact_id, dependency_id);
@@ -132,7 +109,7 @@ void get_dependees_for(Database2& db,
                        const std::vector<std::string>& excluded_types,
                        std::set<Dependency>& dependencies)
 {
-  SQLite::Statement dependees_stm = build_get_depend_stm(db, "dependee_id", "dependency_id", included_types, excluded_types);
+  SQLite::Statement dependees_stm = db.build_get_depend_stm("dependee_id", "dependency_id", included_types, excluded_types);
   dependees_stm.bind(1, artifact_id);
 
   for(long long dependee_id : Database2::get_ids(dependees_stm)) {
@@ -146,7 +123,7 @@ void get_all_dependencies_for(Database2& db,
                               const std::vector<std::string>& excluded_types,
                               std::set<Dependency>& dependencies)
 {
-  SQLite::Statement dependencies_stm = build_get_depend_stm(db, "dependency_id", "dependee_id", included_types, excluded_types);
+  SQLite::Statement dependencies_stm = db.build_get_depend_stm("dependency_id", "dependee_id", included_types, excluded_types);
 
   std::set<long long> visited, queue = {artifact_id};
 
@@ -175,7 +152,7 @@ void get_all_dependees_for(Database2& db,
                            const std::vector<std::string>& excluded_types,
                            std::set<Dependency>& dependencies)
 {
-  SQLite::Statement dependees_stm = build_get_depend_stm(db, "dependee_id", "dependency_id", included_types, excluded_types);
+  SQLite::Statement dependees_stm = db.build_get_depend_stm("dependee_id", "dependency_id", included_types, excluded_types);
 
   std::set<long long> visited, queue = {artifact_id};
 
@@ -354,7 +331,7 @@ void print(const std::map<long long, Artifact>& artifacts, const std::set<Depend
 
 } // anonymous namespace
 
-boost::program_options::options_description Dependencies_Command::options() const
+boost::program_options::options_description Dependencies_Command::options()
 {
   bpo::options_description opt = default_options();
   opt.add_options()
@@ -379,7 +356,7 @@ boost::program_options::options_description Dependencies_Command::options() cons
   return opt;
 }
 
-int Dependencies_Command::execute(const std::vector<std::string>& args) const
+int Dependencies_Command::execute(const std::vector<std::string>& args)
 {
   bpo::positional_options_description p;
   p.add("artifact", -1);

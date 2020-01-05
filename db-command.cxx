@@ -7,7 +7,7 @@
 
 namespace bpo = boost::program_options;
 
-boost::program_options::options_description DB_Command::options() const
+boost::program_options::options_description DB_Command::options()
 {
   bpo::options_description opt = default_options();
   opt.add_options()
@@ -17,7 +17,7 @@ boost::program_options::options_description DB_Command::options() const
   return opt;
 }
 
-int DB_Command::execute(const std::vector<std::string>& args) const
+int DB_Command::execute(const std::vector<std::string>& args)
 {
   bpo::positional_options_description p;
   p.add("db", 1);

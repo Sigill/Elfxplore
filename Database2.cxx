@@ -1,7 +1,21 @@
 #include "Database2.hxx"
 
 #include <iostream>
+#include <sstream>
 #include <cxxabi.h>
+#include <algorithm>
+#include <cctype>
+
+#include "query-utils.hxx"
+
+namespace {
+
+bool valid_symbol_char(const char c)
+{
+  return isalnum(c) != 0 || c == '_' || c == '$' || c == '.';
+}
+
+} // anonymous namespace
 
 #define LAZYSTM(stm) [this]{ return new SQLite::Statement(db, stm); }
 
@@ -9,6 +23,7 @@ Database2::Database2(const std::string& file)
   : db(file, SQLite::OPEN_CREATE | SQLite::OPEN_READWRITE)
   , create_artifact_stm(LAZYSTM("insert into artifacts (name, type) values (?, ?)"))
   , artifact_id_by_name_stm(LAZYSTM("select id from artifacts where name = ?"))
+  , artifact_name_by_id_stm(LAZYSTM("select name from artifacts where id = ?"))
   , create_symbol_stm(LAZYSTM("insert into symbols (name, dname) values (?, ?)"))
   , symbol_id_by_name_stm(LAZYSTM("select id from symbols where name = ?"))
   , create_symbol_reference_stm(LAZYSTM("insert into symbol_references (artifact_id, symbol_id, category, type, size) values (?, ?, ?, ?, ?)"))
@@ -100,8 +115,17 @@ long long Database2::artifact_id_by_name(const std::string& name) {
   return get_id(stm);
 }
 
+std::string Database2::artifact_name_by_id(long long id)
+{
+  auto& stm = *artifact_name_by_id_stm;
+
+  stm.bind(1, id);
+  return get_string(stm);
+}
+
 void Database2::create_symbol(const std::string& name) {
   int status;
+
   char* dname = abi::__cxa_demangle(name.c_str(), 0, 0, &status);
 
   auto& stm = *create_symbol_stm;
@@ -143,9 +167,14 @@ void Database2::create_symbol_reference(long long artifact_id, long long symbol_
 
 void Database2::insert_symbol_references(long long artifact_id, const SymbolReferenceSet& symbols, const char* category) {
   for(const SymbolReference& symbol : symbols) {
-    long long symbol_id = symbol_id_by_name(symbol.name);
+
+    // Strip symbol version
+    auto first_invalid_char = std::find_if_not(symbol.name.begin(), symbol.name.end(), valid_symbol_char);
+    const std::string symbol_name(symbol.name.cbegin(), first_invalid_char);
+
+    long long symbol_id = symbol_id_by_name(symbol_name);
     if (symbol_id == -1) {
-      create_symbol(symbol.name);
+      create_symbol(symbol_name);
       symbol_id = db.getLastInsertRowid();
     }
 
@@ -169,6 +198,28 @@ void Database2::create_dependency(long long dependee_id, long long dependency_id
   stm.exec();
   stm.reset();
   stm.clearBindings();
+}
+
+SQLite::Statement Database2::build_get_depend_stm(const std::string& select_field,
+                                                  const std::string& match_field,
+                                                  const std::vector<std::string>& included_types,
+                                                  const std::vector<std::string>& excluded_types)
+{
+  std::stringstream ss;
+  ss << "select " << select_field << " from dependencies";
+
+  if (!included_types.empty() || !excluded_types.empty())
+    ss << " inner join artifacts on artifacts.id = dependencies." << select_field;
+
+  ss << " where " << match_field << " = ?";
+
+  if (!included_types.empty())
+    ss << " and artifacts.type in " << in_expr(included_types);
+
+  if (!excluded_types.empty())
+    ss << " and artifacts.type not in " << in_expr(excluded_types);
+
+  return statement(ss.str());
 }
 
 long long Database2::get_id(SQLite::Statement& stm) {

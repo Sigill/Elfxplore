@@ -60,6 +60,7 @@ public:
 private:
   Lazy<SQLite::Statement> create_artifact_stm;
   Lazy<SQLite::Statement> artifact_id_by_name_stm;
+  Lazy<SQLite::Statement> artifact_name_by_id_stm;
   Lazy<SQLite::Statement> create_symbol_stm;
   Lazy<SQLite::Statement> symbol_id_by_name_stm;
   Lazy<SQLite::Statement> create_symbol_reference_stm;
@@ -86,11 +87,11 @@ public:
 
   std::string artifact_name_by_id(long long id);
 
-  std::string artifact_type_by_id(long long id);
-
   void create_symbol(const std::string& name);
 
   int symbol_id_by_name(const std::string& name);
+
+  int symbol_name_by_id(long long id);
 
   void create_symbol_reference(long long artifact_id, long long symbol_id, const char* category, const char type, long long size);
 
@@ -99,6 +100,11 @@ public:
   void insert_symbol_references(long long artifact_id, const ArtifactSymbols& symbols);
 
   void create_dependency(long long dependee_id, long long dependency_id);
+
+  SQLite::Statement build_get_depend_stm(const std::string& select_field,
+                                         const std::string& match_field,
+                                         const std::vector<std::string>& included_types,
+                                         const std::vector<std::string>& excluded_types);
 
   std::vector<long long> dependencies(long long dependee_id);
 
