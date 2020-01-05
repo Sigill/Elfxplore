@@ -208,13 +208,23 @@ void process_commands(std::istream& in, std::vector<CompilationOperation>& opera
   }
 }
 
-void insert_artifact(std::map<std::string, std::string>& artifacts, const std::string& name, const std::string& type) {
+struct ArtifactAttribute {
+  std::string type;
+  bool generated;
+
+  explicit ArtifactAttribute(std::string type)
+    : type(std::move(type))
+    , generated(false)
+  {}
+};
+
+void insert_artifact(std::map<std::string, ArtifactAttribute>& artifacts, const std::string& name, const std::string& type) {
   auto it = artifacts.find(name);
   if (it == artifacts.end()) {
-    artifacts[name] = type;
+    artifacts.emplace(name, type);
   } else {
-    if (it->second != type) {
-      std::cerr << "Ambiguous artifact type " << name << ": " << it->second << " or " << type << std::endl;
+    if (it->second.type != type) {
+      std::cerr << "Ambiguous artifact type " << name << ": " << it->second.type << " or " << type << std::endl;
     }
   }
 }
@@ -276,9 +286,10 @@ int Extract_Dependencies_Command::execute(const std::vector<std::string>& args)
     }
   }
 
-  std::map<std::string, std::string> artifacts;
+  std::map<std::string, ArtifactAttribute> artifacts;
   for(const CompilationOperation& op : operations) {
     insert_artifact(artifacts, op.output, op.output_type);
+    artifacts.at(op.output).generated = true;
     for (const auto& dependency: op.dependencies) {
       if (is_dependency_type(dependency.second)) {
         insert_artifact(artifacts, dependency.first, dependency.second);
@@ -292,7 +303,7 @@ int Extract_Dependencies_Command::execute(const std::vector<std::string>& args)
     SQLite::Transaction transaction(db.database());
 
     for(const auto& artifact : artifacts) {
-      db.create_artifact(artifact.first, artifact.second);
+      db.create_artifact(artifact.first, artifact.second.type, artifact.second.generated);
     }
 
     transaction.commit();

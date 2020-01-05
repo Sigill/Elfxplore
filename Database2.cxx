@@ -21,7 +21,7 @@ bool valid_symbol_char(const char c)
 
 Database2::Database2(const std::string& file)
   : db(file, SQLite::OPEN_CREATE | SQLite::OPEN_READWRITE)
-  , create_artifact_stm(LAZYSTM("insert into artifacts (name, type) values (?, ?)"))
+  , create_artifact_stm(LAZYSTM("insert into artifacts (name, type, generated) values (?, ?, ?)"))
   , artifact_id_by_name_stm(LAZYSTM("select id from artifacts where name = ?"))
   , artifact_name_by_id_stm(LAZYSTM("select name from artifacts where id = ?"))
   , create_symbol_stm(LAZYSTM("insert into symbols (name, dname) values (?, ?)"))
@@ -43,9 +43,12 @@ void Database2::create() {
 create table if not exists "artifacts" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" VARCHAR(256) NOT NULL,
-  "type" VARCHAR(16) NOT NULL
+  "type" VARCHAR(16) NOT NULL,
+  "generated" BOOLEAN NOT NULL DEFAULT 0
 );
 create unique index "unique_artifacts" on "artifacts" ("name");
+create index "artifact_by_type" on "artifacts" ("type");
+create index "generated_artifacts" on "artifacts" ("generated");
 
 create table if not exists "dependencies" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -98,11 +101,12 @@ long long Database2::last_id()
   return db.getLastInsertRowid();
 }
 
-void Database2::create_artifact(const std::string& name, const std::string& type) {
+void Database2::create_artifact(const std::string& name, const std::string& type, const bool generated) {
   auto& stm = *create_artifact_stm;
 
   stm.bind(1, name);
   stm.bind(2, type);
+  stm.bind(3, generated);
   stm.exec();
   stm.reset();
   stm.clearBindings();

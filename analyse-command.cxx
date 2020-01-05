@@ -79,6 +79,7 @@ select artifact_id, symbol_id
 from symbol_references
 inner join artifacts on artifacts.id = artifact_id
 where category = "undefined"
+and artifacts.generated = 1
 )";
 
   if (artifacts.empty()) {

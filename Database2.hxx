@@ -81,7 +81,7 @@ public:
 
   long long last_id();
 
-  void create_artifact(const std::string& name, const std::string& type);
+  void create_artifact(const std::string& name, const std::string& type, const bool generated);
 
   long long artifact_id_by_name(const std::string& name);
 

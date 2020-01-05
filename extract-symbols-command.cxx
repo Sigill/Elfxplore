@@ -35,7 +35,7 @@ void extract_symbols_from_file(const std::string& usable_path, ArtifactSymbols& 
 void insert_symbols(Database2& db, const std::string& path, ArtifactSymbols& symbols) {
   long long artifact_id = db.artifact_id_by_name(path);
   if (artifact_id == -1) {
-    db.create_artifact(path, output_type(path));
+    db.create_artifact(path, output_type(path), false);
     artifact_id = db.last_id();
   }
 
