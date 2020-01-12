@@ -159,6 +159,175 @@ and symbol_references.symbol_id in )" << in_expr(std::vector<long long>(undefine
   }
 }
 
+std::vector<long long> get_undefined_symbols(Database2& db, const long long dependee_id)
+{
+  SQLite::Statement undefined_symbols_stm = db.statement(R"(
+select symbol_id
+from symbol_references
+where category = "undefined"
+and artifact_id = ?)");
+
+  undefined_symbols_stm.bind(1, dependee_id);
+  return Database2::get_ids(undefined_symbols_stm);
+}
+
+std::vector<std::string> get_useless_dependencies(Database2& db,
+                                                  const long long dependee_id,
+                                                  const std::vector<long long>& useful_dependencies)
+{
+  std::stringstream useless_dependencies_q;
+  useless_dependencies_q << R"(
+select artifacts.name
+from artifacts
+inner join dependencies on dependencies.dependency_id = artifacts.id
+where artifacts.type = "shared"
+and dependencies.dependee_id = ?
+and dependencies.dependency_id not in )" << in_expr(useful_dependencies);
+
+  SQLite::Statement useless_dependencies_stm = db.statement(useless_dependencies_q.str());
+  useless_dependencies_stm.bind(1, dependee_id);
+
+  std::vector<std::string> useless_dependencies;
+
+  while(useless_dependencies_stm.executeStep()) {
+    useless_dependencies.emplace_back(useless_dependencies_stm.getColumn(0).getString());
+  }
+
+  return useless_dependencies;
+}
+
+std::vector<long long> get_shared_dependencies(Database2& db, const long long dependee_id)
+{
+  SQLite::Statement dependencies_stm = db.build_get_depend_stm("dependency_id", "dependee_id", {"shared"}, {});
+  dependencies_stm.bind(1, dependee_id);
+  return Database2::get_ids(dependencies_stm);
+}
+
+std::vector<long long> get_useful_dependencies_simple1(Database2& db, const long long dependee_id)
+{
+  const std::vector<long long> undefined_symbols = get_undefined_symbols(db, dependee_id);
+  const std::vector<long long> shared_dependencies = get_shared_dependencies(db, dependee_id);
+
+  std::stringstream useful_dependencies_q;
+  useful_dependencies_q << R"(
+select distinct symbol_references.artifact_id
+from symbol_references
+where symbol_references.artifact_id in)" << in_expr(shared_dependencies) << R"(
+and symbol_references.category = "external"
+and symbol_references.symbol_id in )" << in_expr(undefined_symbols);
+
+  SQLite::Statement useful_dependencies_stm = db.statement(useful_dependencies_q.str());
+  return Database2::get_ids(useful_dependencies_stm);
+}
+
+//std::vector<long long> get_useful_dependencies_simple2(Database2& db, const long long dependee_id)
+//{
+//  const std::vector<long long> undefined_symbols = get_undefined_symbols(db, dependee_id);
+
+//  std::stringstream useful_dependencies_q;
+//  useful_dependencies_q << R"(
+//select distinct symbol_references.artifact_id
+//from symbol_references
+//inner join dependencies on dependencies.dependency_id = symbol_references.artifact_id
+//inner join artifacts on artifacts.id = symbol_references.artifact_id
+//where dependencies.dependee_id = ?
+//and artifacts.type = "shared"
+//and symbol_references.category = "external"
+//and symbol_references.symbol_id in )" << in_expr(undefined_symbols);
+
+//  SQLite::Statement useful_dependencies_stm = db.statement(useful_dependencies_q.str());
+//  useful_dependencies_stm.bind(1, dependee_id);
+//  return Database2::get_ids(useful_dependencies_stm);
+//}
+
+//std::vector<long long> get_useful_dependencies_join(Database2& db, const long long dependee_id)
+//{
+//  std::stringstream useful_dependencies_q;
+//  useful_dependencies_q << R"(
+//select distinct dependencies.dependency_id
+//from dependencies
+//inner join symbol_references as external_references on external_references.artifact_id = dependencies.dependency_id
+//inner join symbol_references as undefined_references on undefined_references.artifact_id = dependencies.dependee_id
+//                                                  and undefined_references.symbol_id = external_references.symbol_id
+//inner join artifacts /*indexed by artifact_by_type*/ on artifacts.id = dependencies.dependency_id
+//where external_references.category = "external"
+//and undefined_references.category = "undefined"
+//and artifacts.type = "shared"
+//and dependencies.dependee_id = ?)";
+
+//  SQLite::Statement useful_dependencies_stm = db.statement(useful_dependencies_q.str());
+//  useful_dependencies_stm.bind(1, dependee_id);
+//  return Database2::get_ids(useful_dependencies_stm);
+//}
+
+//std::vector<long long> get_useful_dependencies_inner_query(Database2& db, const long long dependee_id)
+//{
+//  std::stringstream useful_dependencies_q;
+//  useful_dependencies_q << R"(
+//select distinct dependencies.dependee_id, dependencies.dependency_id
+//from dependencies
+//inner join artifacts /*indexed by artifact_by_type*/ on artifacts.id = dependencies.dependency_id
+//where artifacts.type = "shared"
+//and dependencies.dependee_id = ?
+//and not exists (
+//select 1
+//from symbol_references as undefined_references
+//inner join symbol_references as external_references on external_references.artifact_id = dependencies.dependency_id
+//                                                 and undefined_references.symbol_id = external_references.symbol_id
+//where undefined_references.artifact_id = dependencies.dependee_id
+//and external_references.category = "external"
+//and undefined_references.category = "undefined"
+//)
+//)";
+
+//  SQLite::Statement useful_dependencies_stm = db.statement(useful_dependencies_q.str());
+//  useful_dependencies_stm.bind(1, dependee_id);
+//  return Database2::get_ids(useful_dependencies_stm);
+//}
+
+std::vector<std::pair<long long, std::string>> get_final_artifacts(Database2& db, const std::vector<std::string>& artifacts)
+{
+  std::vector<std::pair<long long, std::string>> final_artifacts;
+
+  std::stringstream ss;
+  ss << R"(
+select id, name
+from artifacts
+where generated = 1
+)";
+
+  if (artifacts.empty()) {
+    ss << R"(and artifacts.type in ("shared", "library", "executable"))" << "\n";
+  } else {
+    ss << "and artifacts.name in " << in_expr(artifacts) << "\n";
+  }
+
+  SQLite::Statement stm = db.statement(ss.str());
+
+  while(stm.executeStep()) {
+    final_artifacts.emplace_back(stm.getColumn(0).getInt64(), stm.getColumn(1).getString());
+  }
+
+  return final_artifacts;
+}
+
+void analyse_useless_dependencies(Database2& db, const std::vector<std::string>& artifacts)
+{
+  const std::vector<std::pair<long long, std::string>> final_artifacts = get_final_artifacts(db, artifacts);
+  for(const std::pair<long long, std::string>& artifact : final_artifacts) {
+    const std::vector<long long> useful_dependencies = get_useful_dependencies_simple1(db, artifact.first);
+
+    const std::vector<std::string> useless_dependencies = get_useless_dependencies(db, artifact.first, useful_dependencies);
+
+    if (!useless_dependencies.empty()) {
+      std::cout << artifact.second << "\n";
+      for(const std::string& useless_dependency : useless_dependencies) {
+        std::cout << "\t" << useless_dependency << "\n";
+      }
+    }
+  }
+}
+
 } // anonymous namespace
 
 boost::program_options::options_description Analyse_Command::options()
@@ -182,6 +351,7 @@ boost::program_options::options_description Analyse_Command::options()
        "Artifact to export.")
       ("duplicated-symbols", "Analyse duplicated symbols.")
       ("undefined-symbols", "Analyse undefined symbols.")
+      ("useless-dependencies", "Analyse useless dependencies.")
       ;
 
   return opt;
@@ -207,7 +377,7 @@ int Analyse_Command::execute(const std::vector<std::string>& args)
 
   Database2 db(vm["db"].as<std::string>());
 
-  if (vm.count("duplicated-symbols") + vm.count("undefined-symbols") != 1) {
+  if (vm.count("duplicated-symbols") + vm.count("undefined-symbols") + vm.count("useless-dependencies")!= 1) {
     std::cerr << "Invalid analytis type" << std::endl;
     return -1;
   }
@@ -220,6 +390,8 @@ int Analyse_Command::execute(const std::vector<std::string>& args)
                                vm["not-category"].as<std::vector<std::string>>());
   } else if (vm.count("undefined-symbols")) {
     analyse_undefined_symbols(db, vm["artifact"].as<std::vector<std::string>>());
+  } else if (vm.count("useless-dependencies")) {
+    analyse_useless_dependencies(db, vm["artifact"].as<std::vector<std::string>>());
   }
 
   return 0;
