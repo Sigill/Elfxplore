@@ -12,7 +12,8 @@ boost::program_options::options_description DB_Command::options()
   bpo::options_description opt = default_options();
   opt.add_options()
       ("init", "Initialize the database.")
-      ("clear-symbols", "Clear the symbols table.");
+      ("clear-symbols", "Clear the symbols table.")
+      ("optimize", "Optimize database.");
 
   return opt;
 }
@@ -46,6 +47,10 @@ int DB_Command::execute(const std::vector<std::string>& args)
 
   if (vm.count("clear-symbols")) {
     db.truncate_symbols();
+  }
+
+  if (vm.count("optimize")) {
+    db.database().exec("analyze;");
   }
 
   return 0;
