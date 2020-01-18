@@ -30,6 +30,7 @@ Database2::Database2(const std::string& file)
   , create_dependency_stm(LAZYSTM("insert into dependencies (dependee_id, dependency_id) values (?, ?)"))
   , find_dependencies_stm(LAZYSTM("select dependency_id from dependencies where dependee_id = ?"))
   , find_dependees_stm(LAZYSTM("select dependee_id from dependencies where dependency_id = ?"))
+  , undefined_symbols_stm(LAZYSTM("select symbol_id from symbol_references where category = \"undefined\" and artifact_id = ?"))
 {
   db.exec("PRAGMA encoding='UTF-8';");
   db.exec("PRAGMA journal_mode=WAL;");
@@ -283,4 +284,33 @@ std::vector<long long> Database2::dependees(long long dependency_id)
   stm.bind(1, dependency_id);
 
   return get_ids(stm);
+}
+
+std::vector<long long> Database2::undefined_symbols(const long long artifact_id)
+{
+  undefined_symbols_stm->bind(1, artifact_id);
+  return get_ids(*undefined_symbols_stm);
+}
+
+std::map<long long, std::vector<std::string> > Database2::resolve_symbols(const std::vector<long long>& symbols)
+{
+  std::map<long long, std::vector<std::string>> symbol_locations;
+
+  if (!symbols.empty())
+  {
+    std::stringstream ss;
+    ss << R"(
+  select symbol_references.symbol_id, artifacts.name from symbol_references
+  inner join artifacts on artifacts.id = symbol_references.artifact_id
+  where symbol_references.category = "external"
+  and symbol_references.symbol_id in )" << in_expr(symbols);
+
+    SQLite::Statement stm = statement(ss.str());
+
+    while(stm.executeStep()) {
+      symbol_locations[stm.getColumn(0).getInt64()].emplace_back(stm.getColumn(1).getString());
+    }
+  }
+
+  return symbol_locations;
 }

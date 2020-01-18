@@ -5,8 +5,9 @@
 #include "ArtifactSymbols.hxx"
 #include <SQLiteCpp/SQLiteCpp.h>
 
-#include <set>
 #include <vector>
+#include <map>
+#include <string>
 #include <utility>
 #include <functional>
 #include <boost/noncopyable.hpp>
@@ -67,6 +68,7 @@ private:
   Lazy<SQLite::Statement> create_dependency_stm;
   Lazy<SQLite::Statement> find_dependencies_stm;
   Lazy<SQLite::Statement> find_dependees_stm;
+  Lazy<SQLite::Statement> undefined_symbols_stm;
 
 public:
   explicit Database2(const std::string& file);
@@ -109,6 +111,10 @@ public:
   std::vector<long long> dependencies(long long dependee_id);
 
   std::vector<long long> dependees(long long dependency_id);
+
+  std::vector<long long> undefined_symbols(const long long artifact_id);
+
+  std::map<long long, std::vector<std::string>> resolve_symbols(const std::vector<long long>& symbols);
 
   static long long get_id(SQLite::Statement& stm);
   static std::vector<long long> get_ids(SQLite::Statement& stm);

@@ -71,33 +71,6 @@ order by total_size desc, name asc;
   }
 }
 
-std::map<long long, std::set<long long>> find_undefined_symbols(Database2& db, const std::vector<std::string>& artifacts)
-{
-  std::stringstream ss;
-  ss << R"(
-select artifact_id, symbol_id
-from symbol_references
-inner join artifacts on artifacts.id = artifact_id
-where category = "undefined"
-and artifacts.generated = 1
-)";
-
-  if (artifacts.empty()) {
-    ss << R"(and artifacts.type in ("shared", "library", "executable"))" << "\n";
-  } else {
-    ss << "and artifacts.name in " << in_expr(artifacts) << "\n";
-  }
-
-  SQLite::Statement stm = db.statement(ss.str());
-
-  std::map<long long, std::set<long long>> artifact_undefined_symbols;
-  while(stm.executeStep()) {
-    artifact_undefined_symbols[stm.getColumn(0).getInt64()].insert(stm.getColumn(1).getInt64());
-  }
-
-  return artifact_undefined_symbols;
-}
-
 template<typename K, typename V, typename C, typename A>
 std::vector<K> map_keys(const std::map<K, V, C, A>& map) {
   std::vector<K> v(map.size());
@@ -106,9 +79,9 @@ std::vector<K> map_keys(const std::map<K, V, C, A>& map) {
   return v;
 }
 
-std::map<std::string, long long> get_symbol_hnames(Database2& db, const std::vector<long long>& ids)
+std::map<long long, std::string> get_symbol_hnames(Database2& db, const std::vector<long long>& ids)
 {
-  std::map<std::string, long long> names;
+  std::map<long long, std::string> names;
 
   std::stringstream ss;
   ss << R"(
@@ -120,55 +93,66 @@ where id in )" << in_expr(ids);
 
   while(stm.executeStep()) {
     names.emplace(
-          symbol_hname(stm.getColumn(1).getString(), stm.getColumn(2).getString()),
-          stm.getColumn(0).getInt64()
+          stm.getColumn(0).getInt64(),
+          symbol_hname(stm.getColumn(1).getString(), stm.getColumn(2).getString())
           );
   }
 
   return names;
 }
 
-void analyse_undefined_symbols(Database2& db, const std::vector<std::string>& artifacts)
+std::set<long long> find_unresolved_symbols(Database2& db, const long long artifact_id)
 {
-  std::map<long long, std::set<long long>> artifact_undefined_symbols = find_undefined_symbols(db, artifacts);
+  const std::vector<long long> undefined_symbols = db.undefined_symbols(artifact_id);
+  std::set<long long> unresolved_symbols(undefined_symbols.cbegin(), undefined_symbols.cend());
 
-  for (std::pair<const long long, std::set<long long>>& it : artifact_undefined_symbols) {
-    const long long artifact_id = it.first;
-    std::set<long long>& undefined_symbols = it.second;
-
-    std::stringstream ss;
-    ss << R"(
+  std::stringstream ss;
+  ss << R"(
 select symbol_id
 from symbol_references
 inner join dependencies on symbol_references.artifact_id = dependencies.dependency_id
 where symbol_references.category = "external"
 and dependencies.dependee_id = ?
-and symbol_references.symbol_id in )" << in_expr(std::vector<long long>(undefined_symbols.begin(), undefined_symbols.end()));
+and symbol_references.symbol_id in )" << in_expr(undefined_symbols);
 
-    SQLite::Statement stm = db.statement(ss.str());
-    stm.bind(1, artifact_id);
+  SQLite::Statement stm = db.statement(ss.str());
+  stm.bind(1, artifact_id);
 
-    while(stm.executeStep()) {
-      undefined_symbols.erase(stm.getColumn(0).getInt64());
-    }
-
-    std::cout << "############ " << db.artifact_name_by_id(artifact_id) << "\n";
-    for(const std::pair<std::string, long long>& undefined_symbol : get_symbol_hnames(db, {undefined_symbols.begin(), undefined_symbols.end()})) {
-      std::cout << undefined_symbol.first << "\n";
-    }
+  while(stm.executeStep()) {
+    unresolved_symbols.erase(stm.getColumn(0).getInt64());
   }
+
+  return unresolved_symbols;
 }
 
-std::vector<long long> get_undefined_symbols(Database2& db, const long long dependee_id)
+template<typename T>
+std::vector<T> as_vector(const std::set<T>& s)
 {
-  SQLite::Statement undefined_symbols_stm = db.statement(R"(
-select symbol_id
-from symbol_references
-where category = "undefined"
-and artifact_id = ?)");
+  return std::vector<T>(s.cbegin(), s.cend());
+}
 
-  undefined_symbols_stm.bind(1, dependee_id);
-  return Database2::get_ids(undefined_symbols_stm);
+void analyse_undefined_symbols(Database2& db, const std::vector<long long>& artifacts)
+{
+  for(const long long artifact_id : artifacts) {
+    const std::vector<long long> undefined_symbols = as_vector(find_unresolved_symbols(db, artifact_id));
+
+    if (!undefined_symbols.empty()) {
+      const std::map<long long, std::vector<std::string>> resolving_artifacts = db.resolve_symbols(undefined_symbols);
+
+      std::cout << db.artifact_name_by_id(artifact_id) << "\n";
+
+      for(const std::pair<long long, std::string>& undefined_symbol : get_symbol_hnames(db, undefined_symbols)) {
+        std::cout << "\t" << undefined_symbol.second;
+
+        auto where_resolved = resolving_artifacts.find(undefined_symbol.first);
+        if (where_resolved != resolving_artifacts.cend()) {
+          std::cout << " -> ";
+          std::copy(where_resolved->second.cbegin(), where_resolved->second.cend(), infix_ostream_iterator<std::string>(std::cout, ", "));
+        }
+        std::cout << "\n";
+      }
+    }
+  }
 }
 
 std::vector<std::string> get_useless_dependencies(Database2& db,
@@ -205,16 +189,13 @@ std::vector<long long> get_shared_dependencies(Database2& db, const long long de
 
 std::vector<long long> get_useful_dependencies_simple1(Database2& db, const long long dependee_id)
 {
-  const std::vector<long long> undefined_symbols = get_undefined_symbols(db, dependee_id);
-  const std::vector<long long> shared_dependencies = get_shared_dependencies(db, dependee_id);
-
   std::stringstream useful_dependencies_q;
   useful_dependencies_q << R"(
 select distinct symbol_references.artifact_id
 from symbol_references
-where symbol_references.artifact_id in)" << in_expr(shared_dependencies) << R"(
+where symbol_references.artifact_id in)" << in_expr(get_shared_dependencies(db, dependee_id)) << R"(
 and symbol_references.category = "external"
-and symbol_references.symbol_id in )" << in_expr(undefined_symbols);
+and symbol_references.symbol_id in )" << in_expr(db.undefined_symbols(dependee_id));
 
   SQLite::Statement useful_dependencies_stm = db.statement(useful_dependencies_q.str());
   return Database2::get_ids(useful_dependencies_stm);
@@ -285,42 +266,41 @@ and symbol_references.symbol_id in )" << in_expr(undefined_symbols);
 //  return Database2::get_ids(useful_dependencies_stm);
 //}
 
-std::vector<std::pair<long long, std::string>> get_final_artifacts(Database2& db, const std::vector<std::string>& artifacts)
+std::vector<long long> get_generated_shared_libs_and_executables(Database2& db, const std::vector<std::string>& selection)
 {
-  std::vector<std::pair<long long, std::string>> final_artifacts;
+  std::vector<long long> artifacts;
 
   std::stringstream ss;
   ss << R"(
-select id, name
+select id
 from artifacts
 where generated = 1
 )";
 
-  if (artifacts.empty()) {
-    ss << R"(and artifacts.type in ("shared", "library", "executable"))" << "\n";
+  if (selection.empty()) {
+    ss << R"(and artifacts.type in ("shared", "executable"))" << "\n";
   } else {
-    ss << "and artifacts.name in " << in_expr(artifacts) << "\n";
+    ss << "and artifacts.name in " << in_expr(selection) << "\n";
   }
 
   SQLite::Statement stm = db.statement(ss.str());
 
   while(stm.executeStep()) {
-    final_artifacts.emplace_back(stm.getColumn(0).getInt64(), stm.getColumn(1).getString());
+    artifacts.emplace_back(stm.getColumn(0));
   }
 
-  return final_artifacts;
+  return artifacts;
 }
 
-void analyse_useless_dependencies(Database2& db, const std::vector<std::string>& artifacts)
+void analyse_useless_dependencies(Database2& db, const std::vector<long long>& artifacts)
 {
-  const std::vector<std::pair<long long, std::string>> final_artifacts = get_final_artifacts(db, artifacts);
-  for(const std::pair<long long, std::string>& artifact : final_artifacts) {
-    const std::vector<long long> useful_dependencies = get_useful_dependencies_simple1(db, artifact.first);
+  for(const long long artifact_id : artifacts) {
+    const std::vector<long long> useful_dependencies = get_useful_dependencies_simple1(db, artifact_id);
 
-    const std::vector<std::string> useless_dependencies = get_useless_dependencies(db, artifact.first, useful_dependencies);
+    const std::vector<std::string> useless_dependencies = get_useless_dependencies(db, artifact_id, useful_dependencies);
 
     if (!useless_dependencies.empty()) {
-      std::cout << artifact.second << "\n";
+      std::cout << db.artifact_name_by_id(artifact_id) << "\n";
       for(const std::string& useless_dependency : useless_dependencies) {
         std::cout << "\t" << useless_dependency << "\n";
       }
@@ -389,9 +369,11 @@ int Analyse_Command::execute(const std::vector<std::string>& args)
                                vm["category"].as<std::vector<std::string>>(),
                                vm["not-category"].as<std::vector<std::string>>());
   } else if (vm.count("undefined-symbols")) {
-    analyse_undefined_symbols(db, vm["artifact"].as<std::vector<std::string>>());
+    const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db, vm["artifact"].as<std::vector<std::string>>());
+    analyse_undefined_symbols(db, artifacts);
   } else if (vm.count("useless-dependencies")) {
-    analyse_useless_dependencies(db, vm["artifact"].as<std::vector<std::string>>());
+    const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db, vm["artifact"].as<std::vector<std::string>>());
+    analyse_useless_dependencies(db, artifacts);
   }
 
   return 0;
