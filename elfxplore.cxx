@@ -1,7 +1,8 @@
 #include <iostream>
+#include <string>
 #include <vector>
 #include <memory>
-#include <boost/program_options.hpp>
+#include <functional>
 
 #include "command.hxx"
 #include "db-command.hxx"
@@ -11,45 +12,50 @@
 #include "dependencies-command.hxx"
 #include "artifacts-command.hxx"
 
-namespace bpo = boost::program_options;
+namespace {
+#define COMMAND_FACTORY(T) [](const std::vector<std::string>& args){ return std::make_unique<T>(args); }
 
-void usage(const std::vector<std::string>& commands, const std::vector<std::string>& extra_arg = {}) {
+using CommandFactory = std::function<std::unique_ptr<Command>(const std::vector<std::string>&)>;
+const std::vector<std::pair<std::string, CommandFactory>> commands = {
+    {"db"                  , COMMAND_FACTORY(DB_Command)},
+    {"extract-dependencies", COMMAND_FACTORY(Extract_Dependencies_Command)},
+    {"extract-symbols"     , COMMAND_FACTORY(Extract_Symbols_Command)},
+    {"dependencies"        , COMMAND_FACTORY(Dependencies_Command)},
+    {"artifacts"           , COMMAND_FACTORY(ArtifactsCommand)},
+    {"analyse"             , COMMAND_FACTORY(Analyse_Command)},
+};
+
+std::unique_ptr<Command> get_command(const std::vector<std::string>& args) {
+  auto factory = std::find_if(commands.begin(),
+                              commands.end(),
+                              [&name=args.back()](const std::pair<std::string, CommandFactory>& cmd){ return cmd.first == name; });
+  if (factory == commands.end())
+    return nullptr;
+  else
+    return factory->second(args);
+}
+
+void usage(const std::vector<std::string>& args) {
   std::cout << "Usage:";
-  for(const std::string& command : commands)
-    std::cout << " " << command;
-  for(const std::string& arg : extra_arg)
+  for(const std::string& arg : args)
     std::cout << " " << arg;
-  std::cout << " [options]" << std::endl;
+  std::cout << " [help|-h|--help] <command> [command args]\n"
+            << "Available commands:\n";
+  for(const auto& cmd : commands)
+    std::cout << "  " << cmd.first << "\n";
 }
 
-bool is_help(const std::string& command) {
-  return command == "help" || command == "-h" || command == "--help";
+bool is_help(const std::string& arg) {
+  return arg == "help" || arg == "-h" || arg == "--help";
 }
-
-std::unique_ptr<Command> factory(const std::vector<std::string>& command) {
-  if (command.back() == "db") {
-    return std::make_unique<DB_Command>(command);
-  } else if (command.back() == "extract-dependencies") {
-    return std::make_unique<Extract_Dependencies_Command>(command);
-  } else if (command.back() == "extract-symbols") {
-    return std::make_unique<Extract_Symbols_Command>(command);
-  } else if (command.back() == "analyse") {
-    return std::make_unique<Analyse_Command>(command);
-  } else if (command.back() == "dependencies") {
-    return std::make_unique<Dependencies_Command>(command);
-  } else if (command.back() == "artifacts") {
-    return std::make_unique<ArtifactsCommand>(command);
-  }
-
-  return nullptr;
-}
+} // anonymous namespace
 
 int main(int argc, char** argv)
 {
-  std::vector<std::string> commands = {argv[0]};
+  std::vector<std::string> args = {argv[0]};
 
   if (argc == 1) {
-    usage(commands);
+    usage(args);
     return -1;
   }
 
@@ -57,7 +63,7 @@ int main(int argc, char** argv)
   bool print_help = is_help(argv[i]);
 
   if (print_help && argc == 2) {
-    usage(commands);
+    usage(args);
     return 0;
   }
 
@@ -65,9 +71,9 @@ int main(int argc, char** argv)
     ++i;
   }
 
-  commands.emplace_back(argv[i]);
+  args.emplace_back(argv[i]);
 
-  std::unique_ptr<Command> cmd = factory(commands);
+  std::unique_ptr<Command> cmd = get_command(args);
   if (cmd) {
     if (print_help) {
       cmd->usage(std::cout);
@@ -75,8 +81,8 @@ int main(int argc, char** argv)
       return cmd->execute(std::vector<std::string>(argv + 2, argv + argc));
     }
   } else {
-    std::cerr << "Unknown command: " << commands.back() << std::endl;
-    commands.pop_back();
-    usage(commands);
+    std::cerr << "Unknown command: " << args.back() << std::endl;
+    args.pop_back();
+    usage(args);
   }
 }
