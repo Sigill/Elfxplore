@@ -175,12 +175,12 @@ void get_all_dependees_for(Database2& db,
   }
 }
 
-struct Artifact {
+struct ArtifactData {
   size_t id;
   std::string name;
   std::array<unsigned char, 3> color;
 
-  Artifact(size_t id, std::string name, std::array<unsigned char, 3> color)
+  ArtifactData(size_t id, std::string name, std::array<unsigned char, 3> color)
     : id(id), name(std::move(name)), color(color)
   {}
 };
@@ -202,9 +202,9 @@ std::string build_artifacts_query(const std::set<long long>& artifacts)
   return ss.str();
 }
 
-std::map<long long, Artifact> map_artifacts(Database2& db, const std::set<Dependency>& dependencies, const bool path)
+std::map<long long, ArtifactData> map_artifacts(Database2& db, const std::set<Dependency>& dependencies, const bool path)
 {
-  std::map<long long, Artifact> mapping;
+  std::map<long long, ArtifactData> mapping;
 
   SQLite::Statement q = db.statement(build_artifacts_query(list_artifacts(dependencies)));
 
@@ -227,10 +227,10 @@ std::map<long long, Artifact> map_artifacts(Database2& db, const std::set<Depend
 }
 
 struct tlp_file_format {
-  const std::map<long long, Artifact>& artifacts;
+  const std::map<long long, ArtifactData>& artifacts;
   const std::set<Dependency>& dependencies;
 
-  tlp_file_format(const std::map<long long, Artifact>& artifacts, const std::set<Dependency>& dependencies)
+  tlp_file_format(const std::map<long long, ArtifactData>& artifacts, const std::set<Dependency>& dependencies)
     : artifacts(artifacts), dependencies(dependencies) {}
 
   std::ostream& operator()(std::ostream& out) const {
@@ -247,14 +247,14 @@ struct tlp_file_format {
 
     out << "(property 0 string \"viewLabel\"\n"
            "(default \"\" \"\")\n";
-    std::for_each(artifacts.begin(), artifacts.end(), [&out](const std::pair<long long, Artifact>& node){
+    std::for_each(artifacts.begin(), artifacts.end(), [&out](const std::pair<long long, ArtifactData>& node){
       out << "(node " << node.second.id << " \"" << node.second.name << "\")\n";
     });
     out << ")\n";
 
     out << "(property 0 color \"viewColor\"\n"
            "(default \"(255,95,95,255)\" \"(180,180,180,255)\")\n";
-    std::for_each(artifacts.begin(), artifacts.end(), [&out](const std::pair<long long, Artifact>& node){
+    std::for_each(artifacts.begin(), artifacts.end(), [&out](const std::pair<long long, ArtifactData>& node){
       out << "(node " << node.second.id << " \"" << tlp_fmt(node.second.color) << "\")\n";
     });
     out << ")\n";
@@ -270,17 +270,17 @@ std::ostream& operator<<(std::ostream& out, const tlp_file_format& data) {
 }
 
 struct dot_file_format {
-  const std::map<long long, Artifact>& artifacts;
+  const std::map<long long, ArtifactData>& artifacts;
   const std::set<Dependency>& dependencies;
 
-  dot_file_format(const std::map<long long, Artifact>& artifacts, const std::set<Dependency>& dependencies)
+  dot_file_format(const std::map<long long, ArtifactData>& artifacts, const std::set<Dependency>& dependencies)
     : artifacts(artifacts), dependencies(dependencies) {}
 
   std::ostream& operator()(std::ostream& out) const {
     out << "digraph g {\n"
         << "\tnode [style=filled]\n";
 
-    std::for_each(artifacts.begin(), artifacts.end(), [&out](const std::pair<long long, Artifact>& node){
+    std::for_each(artifacts.begin(), artifacts.end(), [&out](const std::pair<long long, ArtifactData>& node){
       out << "\tn" << node.second.id << " [label=\"" << node.second.name << "\", fillcolor=\"" << hex_fmt(node.second.color) << "\"]\n";
     });
 
@@ -299,10 +299,10 @@ std::ostream& operator<<(std::ostream& out, const dot_file_format& data) {
 }
 
 struct txt_format {
-  const std::map<long long, Artifact>& artifacts;
+  const std::map<long long, ArtifactData>& artifacts;
   const std::set<Dependency>& dependencies;
 
-  txt_format(const std::map<long long, Artifact>& artifacts, const std::set<Dependency>& dependencies)
+  txt_format(const std::map<long long, ArtifactData>& artifacts, const std::set<Dependency>& dependencies)
     : artifacts(artifacts), dependencies(dependencies) {}
 
   std::ostream& operator()(std::ostream& out) const {
@@ -318,7 +318,7 @@ std::ostream& operator<<(std::ostream& out, const txt_format& data) {
   return data(out);
 }
 
-void print(const std::map<long long, Artifact>& artifacts, const std::set<Dependency>& dependencies, std::ostream& out, const std::string& format)
+void print(const std::map<long long, ArtifactData>& artifacts, const std::set<Dependency>& dependencies, std::ostream& out, const std::string& format)
 {
   if (format == "tlp") {
     out << tlp_file_format(artifacts, dependencies) << std::endl;
@@ -349,7 +349,7 @@ boost::program_options::options_description Dependencies_Command::options()
        "Export format: txt (default), tlp, dot.")
       ("dependencies", "Export dependencies.")
       ("dependees", "Export dependees.")
-      ("path", "Print full path.")
+      ("full-path", "Print full path.")
       ("follow,f", "Follow dependencies.")
       ;
 
@@ -420,7 +420,7 @@ int Dependencies_Command::execute(const std::vector<std::string>& args)
     }
   }
 
-  const std::map<long long, Artifact> artifacts = map_artifacts(db, dependencies, vm.count("path") > 0);
+  const std::map<long long, ArtifactData> artifacts = map_artifacts(db, dependencies, vm.count("full-path") > 0);
 
   print(artifacts, dependencies, std::cout, format);
 

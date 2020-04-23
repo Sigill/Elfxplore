@@ -5,9 +5,9 @@
 #include <functional>
 
 #include "command.hxx"
+#include "command-command.hxx"
 #include "db-command.hxx"
-#include "extract-symbols-command.hxx"
-#include "extract-dependencies-command.hxx"
+#include "extract-command.hxx"
 #include "analyse-command.hxx"
 #include "dependencies-command.hxx"
 #include "artifacts-command.hxx"
@@ -18,8 +18,8 @@ namespace {
 using CommandFactory = std::function<std::unique_ptr<Command>(const std::vector<std::string>&)>;
 const std::vector<std::pair<std::string, CommandFactory>> commands = {
     {"db"                  , COMMAND_FACTORY(DB_Command)},
-    {"extract-dependencies", COMMAND_FACTORY(Extract_Dependencies_Command)},
-    {"extract-symbols"     , COMMAND_FACTORY(Extract_Symbols_Command)},
+    {"command"             , COMMAND_FACTORY(Command_Command)},
+    {"extract"             , COMMAND_FACTORY(Extract_Command)},
     {"dependencies"        , COMMAND_FACTORY(Dependencies_Command)},
     {"artifacts"           , COMMAND_FACTORY(ArtifactsCommand)},
     {"analyse"             , COMMAND_FACTORY(Analyse_Command)},

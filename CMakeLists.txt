@@ -18,9 +18,9 @@ add_executable(elfxplore
     query-utils.cxx
     command.cxx
     db-command.cxx
-    extract-dependencies-command.cxx
+    command-command.cxx
+    extract-command.cxx
     dependencies-command.cxx
-    extract-symbols-command.cxx
     analyse-command.cxx
     artifacts-command.cxx
     elfxplore.cxx)

@@ -21,9 +21,13 @@ bool valid_symbol_char(const char c)
 
 Database2::Database2(const std::string& file)
   : db(file, SQLite::OPEN_CREATE | SQLite::OPEN_READWRITE)
-  , create_artifact_stm(LAZYSTM("insert into artifacts (name, type, generated) values (?, ?, ?)"))
+  , create_command_stm(LAZYSTM("insert into commands (directory, executable, args, output_type) values (?, ?, ?, ?)"))
+  , create_artifact_stm(LAZYSTM("insert into artifacts (name, type, generating_command_id) values (?, ?, ?)"))
   , artifact_id_by_name_stm(LAZYSTM("select id from artifacts where name = ?"))
   , artifact_name_by_id_stm(LAZYSTM("select name from artifacts where id = ?"))
+  , artifact_by_name_stm(LAZYSTM("select id, type, generating_command_id from artifacts where name = ?"))
+  , artifact_set_generating_command_stm(LAZYSTM("supdate artifacts set generating_command_id = ? where id = ?"))
+  , artifact_set_type_stm(LAZYSTM("supdate artifacts set type = ? where id = ?"))
   , create_symbol_stm(LAZYSTM("insert into symbols (name, dname) values (?, ?)"))
   , symbol_id_by_name_stm(LAZYSTM("select id from symbols where name = ?"))
   , create_symbol_reference_stm(LAZYSTM("insert into symbol_references (artifact_id, symbol_id, category, type, size) values (?, ?, ?, ?, ?)"))
@@ -41,15 +45,25 @@ Database2::Database2(const std::string& file)
 
 void Database2::create() {
   const char* queries = R"(
+create table if not exists "commands" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "directory" VARCHAR(256) NOT NULL,
+  "executable" VARCHAR(256) NOT NULL,
+  "args" TEXT NOT NULL,
+  "output_type" VARCHAR(16) NOT NULL
+);
+create unique index "unique_commands" on "commands" ("directory", "executable", "args");
+create index "command_by_type" on "commands" ("type");
+
 create table if not exists "artifacts" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" VARCHAR(256) NOT NULL,
   "type" VARCHAR(16) NOT NULL,
-  "generated" BOOLEAN NOT NULL DEFAULT 0
+  "generating_command_id" INTEGER NOT NULL DEFAULT -1
 );
 create unique index "unique_artifacts" on "artifacts" ("name");
 create index "artifact_by_type" on "artifacts" ("type");
-create index "generated_artifacts" on "artifacts" ("generated");
+create index "generated_artifacts" on "artifacts" ("generating_command_id");
 
 create table if not exists "dependencies" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -97,17 +111,34 @@ SQLite::Statement Database2::statement(const std::string& query)
   return SQLite::Statement(db, query);
 }
 
+void Database2::optimize()
+{
+  db.exec("analyze;");
+}
+
 long long Database2::last_id()
 {
   return db.getLastInsertRowid();
 }
 
-void Database2::create_artifact(const std::string& name, const std::string& type, const bool generated) {
+void Database2::create_command(const std::string& directory, const std::string& executable, const std::string& args, const std::string& output_type) {
+  auto& stm = *create_command_stm;
+
+  stm.bind(1, directory);
+  stm.bind(2, executable);
+  stm.bind(3, args);
+  stm.bind(4, output_type);
+  stm.exec();
+  stm.reset();
+  stm.clearBindings();
+}
+
+void Database2::create_artifact(const std::string& name, const std::string& type, const long long generating_command_id) {
   auto& stm = *create_artifact_stm;
 
   stm.bind(1, name);
   stm.bind(2, type);
-  stm.bind(3, generated);
+  stm.bind(3, generating_command_id);
   stm.exec();
   stm.reset();
   stm.clearBindings();
@@ -120,12 +151,52 @@ long long Database2::artifact_id_by_name(const std::string& name) {
   return get_id(stm);
 }
 
+bool Database2::artifact_by_name(Artifact& artifact)
+{
+  auto& stm = *artifact_by_name_stm;
+  stm.bind(1, artifact.name);
+
+  bool found = false;
+
+  if(stm.executeStep()) {
+    found = true;
+    artifact.id = stm.getColumn(0).getInt64();
+    artifact.type = stm.getColumn(1).getString();
+    artifact.generating_command_id = stm.getColumn(2).getInt64();
+  }
+
+  stm.reset();
+  stm.clearBindings();
+
+  return found;
+}
+
 std::string Database2::artifact_name_by_id(long long id)
 {
   auto& stm = *artifact_name_by_id_stm;
 
   stm.bind(1, id);
   return get_string(stm);
+}
+
+void Database2::artifact_set_generating_command(const long long artifact_id, const long long command_id)
+{
+  auto& stm = *artifact_set_generating_command_stm;
+  stm.bind(1, command_id);
+  stm.bind(2, artifact_id);
+  stm.exec();
+  stm.reset();
+  stm.clearBindings();
+}
+
+void Database2::artifact_set_type(const long long artifact_id, const std::string& type)
+{
+  auto& stm = *artifact_set_type_stm;
+  stm.bind(1, type);
+  stm.bind(2, artifact_id);
+  stm.exec();
+  stm.reset();
+  stm.clearBindings();
 }
 
 void Database2::create_symbol(const std::string& name) {

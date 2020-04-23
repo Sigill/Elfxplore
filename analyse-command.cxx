@@ -274,7 +274,7 @@ std::vector<long long> get_generated_shared_libs_and_executables(Database2& db, 
   ss << R"(
 select id
 from artifacts
-where generated = 1
+where generating_command_id != -1
 )";
 
   if (selection.empty()) {

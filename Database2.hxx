@@ -54,14 +54,25 @@ template<> struct less<Dependency>
 
 } // namespace std
 
+struct Artifact {
+  long long id = -1;
+  std::string name;
+  std::string type;
+  long long generating_command_id;
+};
+
 class Database2 {
 public:
   SQLite::Database db;
 
 private:
+  Lazy<SQLite::Statement> create_command_stm;
   Lazy<SQLite::Statement> create_artifact_stm;
   Lazy<SQLite::Statement> artifact_id_by_name_stm;
   Lazy<SQLite::Statement> artifact_name_by_id_stm;
+  Lazy<SQLite::Statement> artifact_by_name_stm;
+  Lazy<SQLite::Statement> artifact_set_generating_command_stm;
+  Lazy<SQLite::Statement> artifact_set_type_stm;
   Lazy<SQLite::Statement> create_symbol_stm;
   Lazy<SQLite::Statement> symbol_id_by_name_stm;
   Lazy<SQLite::Statement> create_symbol_reference_stm;
@@ -81,13 +92,23 @@ public:
   SQLite::Database& database() { return db; };
   SQLite::Statement statement(const std::string& query);
 
+  void optimize();
+
   long long last_id();
 
-  void create_artifact(const std::string& name, const std::string& type, const bool generated);
+  void create_command(const std::string& directory, const std::string& executable, const std::string& args, const std::string& output_type);
+
+  void create_artifact(const std::string& name, const std::string& type, const long long generating_command_id = -1);
+
+  bool artifact_by_name(Artifact& artifact);
 
   long long artifact_id_by_name(const std::string& name);
 
   std::string artifact_name_by_id(long long id);
+
+  void artifact_set_generating_command(const long long artifact_id, const long long command_id);
+
+  void artifact_set_type(const long long artifact_id, const std::string& type);
 
   void create_symbol(const std::string& name);
 

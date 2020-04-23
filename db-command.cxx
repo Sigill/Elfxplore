@@ -50,7 +50,7 @@ int DB_Command::execute(const std::vector<std::string>& args)
   }
 
   if (vm.count("optimize")) {
-    db.database().exec("analyze;");
+    db.optimize();
   }
 
   return 0;
