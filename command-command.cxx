@@ -2,9 +2,11 @@
 
 #include <iostream>
 #include <boost/tokenizer.hpp>
+#include <termcolor/termcolor.hpp>
 
 #include "Database2.hxx"
 #include "utils.hxx"
+#include "logger.hxx"
 
 namespace bpo = boost::program_options;
 namespace bfs = boost::filesystem;
@@ -42,35 +44,43 @@ void process_command(const std::string& line, std::vector<CompilationCommand>& c
 
   typename Tokenizer::iterator cur_token(tok.begin()), end_token(tok.end());
 
-  if (next_token(cur_token, end_token, command.directory) == false
-      || next_token(cur_token, end_token, command.executable) == false
-      || cur_token == end_token) {
-    std::cerr << "Invalid command: " << line << "\n"
-              << "Not enough arguments" << std::endl;
+  const bool valid_line = next_token(cur_token, end_token, command.directory) == true
+      && next_token(cur_token, end_token, command.executable) == true
+      && cur_token != end_token;
+
+  if (valid_line) {
+    command.args = std::string(cur_token.base(), line.end());
+
+    if (is_cc(command.executable)) {
+      for (; cur_token != end_token; ++cur_token) {
+        if (starts_with(*cur_token, "-o")) {
+          if (cur_token->size() == 2) {
+            command.output_type = output_type(*cur_token);
+          } else {
+            ++cur_token;
+            if (cur_token != end_token) {
+              command.output_type = output_type(*cur_token);
+            }
+          }
+        }
+      }
+    } else if (command.executable == "ar") {
+      command.output_type = "static";
+    }
+  }
+
+  LOG(info || !valid_line || command.output_type.empty()) << termcolor::green << "Processing command " << termcolor::reset << line;
+
+  if (!valid_line) {
+    LOG(always) << termcolor::red << "Error: not enough arguments" << termcolor::reset;
     return;
   }
 
-  command.args = {cur_token.base(), line.cend()};
-
-  if (is_cc(command.executable))
-  for (; cur_token != end_token; ++cur_token) {
-    if (starts_with(*cur_token, "-o")) {
-      if (cur_token->size() == 2) {
-        command.output_type = output_type(*cur_token);
-      } else {
-        ++cur_token;
-        if (cur_token != end_token) {
-          command.output_type = output_type(*cur_token);
-        }
-      }
-    }
-  } else if (command.executable == "ar") {
-    command.output_type = "static";
-  }
-
   if (command.output_type.empty()) {
-    std::cerr << "Unknown output type: " << line << std::endl;
+    LOG(warning) << "Warning: unrecognized output type";
     command.output_type = "unknown";
+  } else {
+    LOG(debug) << "Output type: " << command.output_type;
   }
 
   commands.emplace_back(std::move(command));

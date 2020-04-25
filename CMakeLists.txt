@@ -9,7 +9,21 @@ find_package(SQLite3 REQUIRED)
 find_package(SQLiteCpp REQUIRED)
 find_package(OpenMP REQUIRED)
 
+include(ExternalProject)
+
+ExternalProject_Add(termcolor_project
+  GIT_REPOSITORY git://github.com/ikalnytskyi/termcolor.git
+  GIT_TAG v1.0.1
+
+  # Termcolor is a header-only library which means we need to
+  # neither configure nor build nor install it. Thus, noop
+  # the hooks.
+  CONFIGURE_COMMAND "" BUILD_COMMAND "" INSTALL_COMMAND "")
+ExternalProject_Get_Property(termcolor_project SOURCE_DIR)
+set(TERMCOLOR_INCLUDE_DIR ${SOURCE_DIR}/include)
+
 add_executable(elfxplore
+    logger.cxx
     SymbolReference.cxx
     SymbolReferenceSet.cxx
     nm.cxx
@@ -24,4 +38,5 @@ add_executable(elfxplore
     analyse-command.cxx
     artifacts-command.cxx
     elfxplore.cxx)
+target_include_directories(elfxplore PRIVATE ${TERMCOLOR_INCLUDE_DIR})
 target_link_libraries(elfxplore Boost::system Boost::program_options Boost::filesystem Threads::Threads SQLite::SQLite3 SQLiteCpp OpenMP::OpenMP_CXX)

@@ -11,9 +11,12 @@
 #include <boost/filesystem.hpp>
 #include <boost/process.hpp>
 
+#include <termcolor/termcolor.hpp>
+
 #include "Database2.hxx"
 #include "utils.hxx"
 #include "nm.hxx"
+#include "logger.hxx"
 
 namespace bpo = boost::program_options;
 namespace bfs = boost::filesystem;
@@ -256,50 +259,73 @@ void extract_dependencies(Database2& db) {
     const long long command_id = stm.getColumn(0).getInt64();
     const bfs::path directory = stm.getColumn(1).getString();
     const std::string executable = stm.getColumn(2).getString();
-    const std::string args= stm.getColumn(3).getString();
+    const std::string args = stm.getColumn(3).getString();
 
     const CompilationOperation op = parse_command(directory, executable, args);
 
-    const long long artifact_id = upsert_artifact(db, op.output, op.output_type, command_id);
-
-    std::cout << artifact_id << " " << op.output << ": " << op.output_type << std::endl;
+    LOG(info || !op.errors.empty()) << termcolor::green << "Command #" << command_id << termcolor::reset
+                                    << " " << directory.string() << " " << executable << " " << args;
 
     for(const std::string& err : op.errors) {
-      std::cout << err << std::endl;
+      LOG(always) << termcolor::red << "Error: " << termcolor::reset << err;
     }
+
+    const long long artifact_id = upsert_artifact(db, op.output, op.output_type, command_id);
+
+    LOG(debug) << termcolor::blue << ">" << termcolor::reset << " (" << op.output_type << ") " << artifact_id << " " << op.output;
 
     for (const auto& dependency: op.dependencies) {
       const long long dependency_id = upsert_artifact(db, dependency.first, dependency.second);
-      std::cout << "\t" << dependency_id << " " << dependency.first << ": " << dependency.second << std::endl;
       db.create_dependency(artifact_id, dependency_id);
+
+      LOG(debug) << termcolor::yellow << "<" << termcolor::reset << " (" << dependency.second << ") " << dependency_id << " " << dependency.first;
     }
   }
 }
 
-void extract_symbols_from_file(const std::string& usable_path, ArtifactSymbols& symbols) {
-  nm_undefined(usable_path, symbols.undefined);
-  nm_defined_extern(usable_path, symbols.external);
-  nm_defined(usable_path, symbols.internal);
+std::vector<ProcessResult> extract_symbols_from_file(const std::string& usable_path, ArtifactSymbols& symbols) {
+  std::vector<ProcessResult> processes;
 
-//  std::future<void> f2 = std::async(std::launch::async, [&usable_path, &external_set=symbols.external]{ nm_defined_extern(usable_path, external_set); });
-//  std::future<void> f3 = std::async(std::launch::async, [&usable_path, &internal_set=symbols.internal]{ nm_defined(usable_path, internal_set); });
-//  std::future<void> f1 = std::async(std::launch::async, [&usable_path, &undefined_set=symbols.undefined]{ nm_undefined(usable_path, undefined_set); });
+  const bool is_dynamic = output_type(usable_path) == std::string("shared");
 
-//  f2.wait(); f3.wait();
+  processes.emplace_back(nm_undefined(usable_path, symbols.undefined, symbol_table::normal));
+  if (is_dynamic && symbols.undefined.empty())
+    processes.emplace_back(nm_undefined(usable_path, symbols.undefined, symbol_table::dynamic));
+
+  processes.emplace_back(nm_defined_extern(usable_path, symbols.external, symbol_table::normal));
+  if (is_dynamic && symbols.external.empty())
+    processes.emplace_back(nm_defined_extern(usable_path, symbols.external, symbol_table::dynamic));
+
+  processes.emplace_back(nm_defined(usable_path, symbols.external, symbol_table::normal));
+  if (is_dynamic && symbols.external.empty())
+    processes.emplace_back(nm_defined(usable_path, symbols.external, symbol_table::dynamic));
 
   substract_set(symbols.internal, symbols.external);
 
-//  f1.wait();
+  return processes;
 }
 
-void insert_symbols(Database2& db, const std::string& path, ArtifactSymbols& symbols) {
+namespace {
+inline bool has_failure(const std::vector<ProcessResult>& processes) {
+  return std::any_of(processes.begin(), processes.end(), failed);
+}
+} // anonymous namespace
+
+void insert_symbols(Database2& db, const std::string& path, ArtifactSymbols& symbols, std::vector<ProcessResult>& processes) {
   long long artifact_id = db.artifact_id_by_name(path);
+
   if (artifact_id == -1) {
     db.create_artifact(path, output_type(path), false);
     artifact_id = db.last_id();
   }
 
-  std::cout << artifact_id << " " << path << std::endl;
+  LOG(info || has_failure(processes)) << termcolor::green << "Artifact #" << artifact_id << termcolor::reset << " " << path;
+
+  for(const ProcessResult& process : processes) {
+    LOG(always && failed(process)) << process.command;
+    LOG(always && process.code != 0) << "Status: " << termcolor::red << (int)process.code << termcolor::reset;
+    LOG(always && !process.err.empty()) << termcolor::red << "stderr: " << termcolor::reset << process.err;
+  }
 
   db.insert_symbol_references(artifact_id, symbols);
 }
@@ -307,25 +333,31 @@ void insert_symbols(Database2& db, const std::string& path, ArtifactSymbols& sym
 class SymbolExtractor {
 private:
   Database2& db;
-  std::vector<ArtifactSymbols> symbols;
+  std::vector<ArtifactSymbols> symbols_pool;
+  std::vector<std::vector<ProcessResult>> processes_pool;
 
 public:
-  explicit SymbolExtractor(Database2& db) : db(db), symbols() {}
+  explicit SymbolExtractor(Database2& db)
+    : db(db), symbols_pool() , processes_pool() {}
 
   void operator()(const std::vector<std::string>& files) {
-    while(symbols.size() < files.size()) symbols.emplace_back();
+    while(symbols_pool.size() < files.size()) {
+      symbols_pool.emplace_back();
+      processes_pool.emplace_back();
+    }
 
 #pragma omp parallel for
     for(size_t i = 0; i < files.size(); ++i) {
-      symbols[i].undefined.clear();
-      symbols[i].external.clear();
-      symbols[i].internal.clear();
+      symbols_pool[i].undefined.clear();
+      symbols_pool[i].external.clear();
+      symbols_pool[i].internal.clear();
+      processes_pool[i].clear();
 
-      extract_symbols_from_file(files[i], symbols[i]);
+      processes_pool[i] = extract_symbols_from_file(files[i], symbols_pool[i]);
     }
 
     for(size_t i = 0; i < files.size(); ++i) {
-      insert_symbols(db, files[i], symbols[i]);
+      insert_symbols(db, files[i], symbols_pool[i], processes_pool[i]);
     }
   }
 };
@@ -398,7 +430,7 @@ int Extract_Command::execute(const std::vector<std::string>& args)
   if (vm.count("symbols")) {
     SQLite::Transaction transaction(db.database());
 
-    BufferedTasks<std::string> tasks(512, SymbolExtractor(db));
+    BufferedTasks<std::string> tasks(64, SymbolExtractor(db));
 
     SQLite::Statement q(db.database(), "select id, name, type from artifacts where type not in (\"source\", \"static\")");
     while (q.executeStep()) {

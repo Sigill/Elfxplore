@@ -2,24 +2,30 @@
 #define NM_HXX
 
 #include <string>
+#include <vector>
 
 #include "SymbolReference.hxx"
 #include "SymbolReferenceSet.hxx"
 
-void nm(const std::string& file, SymbolReferenceSet& symbols, const std::string& options = std::string());
+struct ProcessResult {
+  std::string command;
+  std::string out, err;
+  char code = -1;
+};
 
-SymbolReferenceSet nm(const std::string& file, const std::string& options = std::string());
+bool failed(const ProcessResult& process);
 
-void nm_undefined(const std::string& file, SymbolReferenceSet& symbols);
+enum class symbol_table {
+  normal,
+  dynamic
+};
 
-SymbolReferenceSet nm_undefined(const std::string& file);
+ProcessResult nm(const std::string& file, SymbolReferenceSet& symbols, const std::string& options = std::string());
 
-void nm_defined(const std::string& file, SymbolReferenceSet& symbols);
+ProcessResult nm_undefined(const std::string& file, SymbolReferenceSet& symbols, const symbol_table st);
 
-SymbolReferenceSet nm_defined(const std::string& file);
+ProcessResult nm_defined(const std::string& file, SymbolReferenceSet& symbols, const symbol_table st);
 
-void nm_defined_extern(const std::string& file, SymbolReferenceSet& symbols);
-
-SymbolReferenceSet nm_defined_extern(const std::string& file);
+ProcessResult nm_defined_extern(const std::string& file, SymbolReferenceSet& symbols, const symbol_table st);
 
 #endif /* NM_HXX */

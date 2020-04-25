@@ -93,6 +93,7 @@ public:
   SQLite::Statement statement(const std::string& query);
 
   void optimize();
+  void vacuum();
 
   long long last_id();
 

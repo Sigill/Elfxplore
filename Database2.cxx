@@ -116,6 +116,11 @@ void Database2::optimize()
   db.exec("analyze;");
 }
 
+void Database2::vacuum()
+{
+  db.exec("vacuum;");
+}
+
 long long Database2::last_id()
 {
   return db.getLastInsertRowid();

@@ -13,7 +13,8 @@ boost::program_options::options_description DB_Command::options()
   opt.add_options()
       ("init", "Initialize the database.")
       ("clear-symbols", "Clear the symbols table.")
-      ("optimize", "Optimize database.");
+      ("optimize", "Optimize database.")
+      ("vacuum", "Vacuum (compact) database.");
 
   return opt;
 }
@@ -51,6 +52,10 @@ int DB_Command::execute(const std::vector<std::string>& args)
 
   if (vm.count("optimize")) {
     db.optimize();
+  }
+
+  if (vm.count("vacuum")) {
+    db.vacuum();
   }
 
   return 0;

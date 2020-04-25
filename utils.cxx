@@ -1,6 +1,8 @@
 #include "utils.hxx"
 
 #include <regex>
+#include <algorithm>
+#include <cctype>
 
 #include <wordexp.h>
 
@@ -53,4 +55,36 @@ const char* input_type(const std::string& value) {
   if (ends_with(value, ".a")) return "static";
   if (std::regex_match(value, so_regex)) return "shared";
   return "source";
+}
+
+inline bool is_visible(const int c) {
+  return std::isgraph(c);
+}
+
+void ltrim(std::string &s) {
+  s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](int c) { return std::isgraph(c); }));
+}
+
+void rtrim(std::string &s) {
+  s.erase(std::find_if(s.rbegin(), s.rend(), [](int c) { return std::isgraph(c); }).base(), s.end());
+}
+
+void trim(std::string &s) {
+  ltrim(s);
+  rtrim(s);
+}
+
+std::string ltrim_copy(std::string s) {
+  ltrim(s);
+  return s;
+}
+
+std::string rtrim_copy(std::string s) {
+  rtrim(s);
+  return s;
+}
+
+std::string trim_copy(std::string s) {
+  trim(s);
+  return s;
 }

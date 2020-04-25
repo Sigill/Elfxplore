@@ -1,47 +1,55 @@
 #include "nm.hxx"
 
 #include <boost/process.hpp>
+//#include <boost/asio.hpp>
+//#include <future>
 #include <string.h> // memrchr
+
+#include "utils.hxx"
 
 namespace bp = boost::process;
 
-namespace {
-
-void nm_once(const std::string& file, SymbolReferenceSet& symbols, const std::string& options) {
+ProcessResult nm(const std::string& file, SymbolReferenceSet& symbols, const std::string& options) {
 //  const std::regex symbol_regex("^.{16}(?: (.{16}))? (.) (.*$)");
 
-  const std::string cmd = "nm " + options + " \"" + file + "\"";
+  ProcessResult process;
+  process.command = "nm " + options + " \"" + file + "\"";
 
-  bp::ipstream pipe_stream;
+  bp::ipstream out_stream, err_stream;
 
-  bp::child c(cmd, bp::std_out > pipe_stream);
+  bp::child c(process.command,
+              bp::std_in.close(),
+              bp::std_out > out_stream,
+              bp::std_err > err_stream
+              );
 
-  std::string line;
+  std::thread out_thread([&out_stream, &symbols](){
+    std::string line;
 //  std::smatch nm_match;
-  while (pipe_stream && std::getline(pipe_stream, line) && !line.empty()) {
-    long long address = -1;
-    long long sz = 0;
-    size_t offset = 17;
+    while (out_stream && std::getline(out_stream, line) && !line.empty()) {
+      long long address = -1;
+      long long sz = 0;
+      size_t offset = 17;
 
-    if (line[offset] >= '0' && line[offset] <= '9') {
-      const std::string addr_str(line, 0, 16);
-      address = std::stoll(addr_str, nullptr, 16);
+      if (line[offset] >= '0' && line[offset] <= '9') {
+        const std::string addr_str(line, 0, 16);
+        address = std::stoll(addr_str, nullptr, 16);
 
-      const std::string size_str(line, 17, 16);
-      sz = std::stoll(size_str, nullptr, 16);
-      offset = 34;
-    }
+        const std::string size_str(line, 17, 16);
+        sz = std::stoll(size_str, nullptr, 16);
+        offset = 34;
+      }
 
-    // Filter-out:
-    // .LC??
-    // _GLOBAL__sub_I_*.cpp
-    // symbol [clone .cold]
-    // DW.ref.__gxx_personality_v0
-    if (line[offset + 2] == '.' // There's a lot of .LC??
-        || memrchr(&(line[offset + 2]), '.', line.length() - offset - 2) != NULL)
-      continue;
+      // Filter-out:
+      // .LC??
+      // _GLOBAL__sub_I_*.cpp
+      // symbol [clone .cold]
+      // DW.ref.__gxx_personality_v0
+      if (line[offset + 2] == '.' // There's a lot of .LC??
+          || memrchr(&(line[offset + 2]), '.', line.length() - offset - 2) != NULL)
+        continue;
 
-    symbols.emplace(std::string(line, offset + 2), line[offset], address, sz);
+      symbols.emplace(std::string(line, offset + 2), line[offset], address, sz);
 
 //    if (std::regex_match(line, nm_match, symbol_regex)) {
 //      std::string name = nm_match[3];
@@ -53,47 +61,60 @@ void nm_once(const std::string& file, SymbolReferenceSet& symbols, const std::st
 //      long long sz = (nm_match[1].length() == 0) ? -1 : std::stoll(nm_match[1], nullptr, 16);
 //      symbols.emplace(std::move(name), nm_match[2], sz);
 //    }
-  }
+    }
+  });
+
+  std::future<std::string> err_f = std::async(std::launch::async, [&err_stream](){
+    std::ostringstream ss;
+    ss << err_stream.rdbuf();
+    return ss.str();
+  });
+
+  process.err = err_f.get();
+  rtrim(process.err);
+  out_thread.join();
 
   c.wait();
+
+  process.code = c.exit_code();
+
+  return process;
 }
 
-} // anonymous namespace
-
-void nm(const std::string& file, SymbolReferenceSet& symbols, const std::string& options)
+bool failed(const ProcessResult& process)
 {
-  nm_once(file, symbols, options);
-
-  if (symbols.empty())
-    nm_once(file, symbols, options + " -D");
+  return process.code != 0 || !process.err.empty();
 }
 
-SymbolReferenceSet nm(const std::string& file, const std::string& options) {
-  SymbolReferenceSet symbols;
-  nm(file, symbols, options);
-  return symbols;
+//std::vector<ProcessResult> nm(const std::string& file, SymbolReferenceSet& symbols, const std::string& options)
+//{
+//  std::vector<ProcessResult> processes;
+
+//  processes.emplace_back(nm_once(file, symbols, options));
+
+//  if (symbols.empty())
+//    processes.emplace_back(nm_once(file, symbols, options + " -D"));
+
+//  return processes;
+//}
+
+ProcessResult  nm_undefined(const std::string& file, SymbolReferenceSet& symbols, const symbol_table st) {
+  if (st == symbol_table::normal)
+    return nm(file, symbols, "--undefined-only");
+  else
+    return nm(file, symbols, "--undefined-only -D");
 }
 
-void nm_undefined(const std::string& file, SymbolReferenceSet& symbols) {
-  nm(file, symbols, "--undefined-only");
+ProcessResult nm_defined(const std::string& file, SymbolReferenceSet& symbols, const symbol_table st) {
+  if (st == symbol_table::normal)
+    return nm(file, symbols, "-S --defined-only");
+  else
+    return nm(file, symbols, "-S --defined-only -D");
 }
 
-SymbolReferenceSet nm_undefined(const std::string& file) {
-  return nm(file, "--undefined-only");
-}
-
-void nm_defined(const std::string& file, SymbolReferenceSet& symbols) {
-  nm(file, symbols, "-S --defined-only");
-}
-
-SymbolReferenceSet nm_defined(const std::string& file) {
-  return nm(file, "-S --defined-only");
-}
-
-void nm_defined_extern(const std::string& file, SymbolReferenceSet& symbols) {
-  nm(file, symbols, "-S --defined-only --extern-only");
-}
-
-SymbolReferenceSet nm_defined_extern(const std::string& file) {
-  return nm(file, "-S --defined-only --extern-only");
+ProcessResult nm_defined_extern(const std::string& file, SymbolReferenceSet& symbols, const symbol_table st) {
+  if (st == symbol_table::normal)
+    return nm(file, symbols, "-S --defined-only --extern-only");
+  else
+    return nm(file, symbols, "-S --defined-only --extern-only -D");
 }

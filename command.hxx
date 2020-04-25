@@ -15,7 +15,6 @@ public:
   virtual int execute(const std::vector<std::string>& args) = 0;
 
 protected:
-  bool mVerbose;
   boost::program_options::options_description default_options();
 
 private:
