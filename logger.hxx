@@ -65,21 +65,30 @@ inline ::logger::EndlStream::EndlStream_ operator<<(::logger::EndlStream&& m, st
   return ::logger::EndlStream::EndlStream_(m.os);
 }
 
+inline bool log_enabled(const ::logger::severity_level lvl) {
+  return ::logger::_severity_level <= lvl;
+}
+
+#define LOG_ENABLED(lvl) log_enabled(::logger::severity_level::lvl)
+
+#define SLOGGER std::cout
+
+#define LOGGER ::logger::EndlStream(SLOGGER)
 
 #define LOG(lvl) \
   for(bool live = ::logger::_severity_level <= ::logger::lvl; live; live = false) \
-    ::logger::EndlStream(std::cout)
+    LOGGER
 
 #define LOG_(lvl) \
   if (::logger::_severity_level > ::logger::lvl) {} \
-  else ::logger::EndlStream(std::cout)
+  else LOGGER
 
 #define LOG2(cond, lvl1, lvl2) \
   for(bool live = ::logger::_severity_level <= ((cond) ? ::logger::lvl1 : ::logger::lvl2); live; live = false) \
-    ::logger::EndlStream(std::cout)
+    LOGGER
 
 #define LOG2_(cond, lvl1, lvl2) \
   if (::logger::_severity_level > (cond ? ::logger::lvl1 : ::logger::lvl2)) {} \
-  else ::logger::EndlStream(std::cout)
+  else LOGGER
 
 #endif // LOGGER_HXX

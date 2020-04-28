@@ -6,6 +6,8 @@
 
 #include <wordexp.h>
 
+#include "query-utils.hxx"
+
 namespace {
 
 std::regex so_regex(R"(.*\.so(?:\.\d+)*$)");
@@ -87,4 +89,42 @@ std::string rtrim_copy(std::string s) {
 std::string trim_copy(std::string s) {
   trim(s);
   return s;
+}
+
+std::string symbol_hname(const std::string& name, const std::string& dname) {
+  return dname.empty() ? name : dname;
+}
+
+std::map<long long, std::string> get_symbol_hnames(Database2& db, const std::vector<long long>& ids)
+{
+  std::map<long long, std::string> names;
+
+  std::stringstream ss;
+  ss << R"(
+select id, name, dname
+from symbols
+where id in )" << in_expr(ids);
+
+  SQLite::Statement stm = db.statement(ss.str());
+
+  while(stm.executeStep()) {
+    names.emplace(
+          stm.getColumn(0).getInt64(),
+          symbol_hname(stm.getColumn(1).getString(), stm.getColumn(2).getString())
+          );
+  }
+
+  return names;
+}
+
+std::vector<std::string> split(std::string str, const char delim) {
+  std::vector<std::string> tokens;
+
+  size_t pos = 0;
+  while ((pos = str.find(delim)) != std::string::npos) {
+      tokens.emplace_back(str.substr(0, pos));
+      str.erase(0, pos + 1);
+  }
+
+  return tokens;
 }

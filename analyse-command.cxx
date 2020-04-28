@@ -5,18 +5,37 @@
 #include <algorithm>
 
 #include <boost/program_options.hpp>
+#include <boost/process.hpp>
+#include <boost/asio.hpp>
+
+#include <termcolor/termcolor.hpp>
 
 #include "infix_iterator.hxx"
 
 #include "Database2.hxx"
 #include "query-utils.hxx"
+#include "utils.hxx"
+#include "logger.hxx"
 
 namespace bpo = boost::program_options;
+namespace bp = boost::process;
 
 namespace {
 
-std::string symbol_hname(std::string name, std::string dname) {
-  return dname.empty() ? name : dname;
+enum class useless_dependencies_analysis_modes {
+  symbols,
+  ldd
+};
+
+std::istream& operator>>(std::istream& in, useless_dependencies_analysis_modes & mode) {
+  std::string token;
+  in >> token;
+  if (token == "symbols")
+    mode = useless_dependencies_analysis_modes::symbols;
+  else if (token == "ldd")
+    mode = useless_dependencies_analysis_modes::ldd;
+  else throw boost::program_options::invalid_option_value("Invalid mode");
+  return in;
 }
 
 void analyse_duplicated_symbols(Database2& db,
@@ -77,28 +96,6 @@ std::vector<K> map_keys(const std::map<K, V, C, A>& map) {
   std::transform(map.begin(), map.end(), v.begin(),
                  [](const std::pair<K, V>& pair) -> K { return pair.first; });
   return v;
-}
-
-std::map<long long, std::string> get_symbol_hnames(Database2& db, const std::vector<long long>& ids)
-{
-  std::map<long long, std::string> names;
-
-  std::stringstream ss;
-  ss << R"(
-select id, name, dname
-from symbols
-where id in )" << in_expr(ids);
-
-  SQLite::Statement stm = db.statement(ss.str());
-
-  while(stm.executeStep()) {
-    names.emplace(
-          stm.getColumn(0).getInt64(),
-          symbol_hname(stm.getColumn(1).getString(), stm.getColumn(2).getString())
-          );
-  }
-
-  return names;
 }
 
 std::set<long long> find_unresolved_symbols(Database2& db, const long long artifact_id)
@@ -201,6 +198,26 @@ and symbol_references.symbol_id in )" << in_expr(db.undefined_symbols(dependee_i
   return Database2::get_ids(useful_dependencies_stm);
 }
 
+std::map<long long, std::vector<long long>> detail_useful_dependencies(Database2& db, const long long dependee_id)
+{
+  std::stringstream useful_dependencies_q;
+  useful_dependencies_q << R"(
+select symbol_references.artifact_id, symbol_references.symbol_id
+from symbol_references
+where symbol_references.artifact_id in)" << in_expr(get_shared_dependencies(db, dependee_id)) << R"(
+and symbol_references.category = "external"
+and symbol_references.symbol_id in )" << in_expr(db.undefined_symbols(dependee_id));
+
+  std::map<long long, std::vector<long long>> resolved_symbols;
+
+  SQLite::Statement stm = db.statement(useful_dependencies_q.str());
+  while (stm.executeStep()) {
+    resolved_symbols[stm.getColumn(0).getInt64()].push_back(stm.getColumn(1).getInt64());
+  }
+
+  return resolved_symbols;
+}
+
 //std::vector<long long> get_useful_dependencies_simple2(Database2& db, const long long dependee_id)
 //{
 //  const std::vector<long long> undefined_symbols = get_undefined_symbols(db, dependee_id);
@@ -292,19 +309,86 @@ where generating_command_id != -1
   return artifacts;
 }
 
-void analyse_useless_dependencies(Database2& db, const std::vector<long long>& artifacts)
+void analyse_useless_dependencies_symbols(Database2& db, const std::vector<long long>& artifacts)
 {
   for(const long long artifact_id : artifacts) {
     const std::vector<long long> useful_dependencies = get_useful_dependencies_simple1(db, artifact_id);
 
-    const std::vector<std::string> useless_dependencies = get_useless_dependencies(db, artifact_id, useful_dependencies);
+    std::vector<std::string> useless_dependencies = get_useless_dependencies(db, artifact_id, useful_dependencies);
+    std::sort(useless_dependencies.begin(), useless_dependencies.end());
 
-    if (!useless_dependencies.empty()) {
-      std::cout << db.artifact_name_by_id(artifact_id) << "\n";
-      for(const std::string& useless_dependency : useless_dependencies) {
-        std::cout << "\t" << useless_dependency << "\n";
+    LOG(debug || !useless_dependencies.empty())
+        << termcolor::green << "Artifact " << artifact_id << termcolor::reset << " " << db.artifact_name_by_id(artifact_id);
+
+    if (LOG_ENABLED(debug)) {
+      LOGGER << "Dynamic dependencies ";
+      for(const long long dependency_id : get_shared_dependencies(db, artifact_id)) {
+        LOGGER << "\t" << termcolor::blue << dependency_id << termcolor::reset << " " << db.artifact_name_by_id(dependency_id);
+      }
+
+      const std::map<long long, std::vector<long long>> resolved_symbols = detail_useful_dependencies(db, artifact_id);
+
+      for(const auto& useful_dependency : resolved_symbols) {
+        const long long dependency_id = useful_dependency.first;
+        LOGGER << termcolor::green << "Artifact " << dependency_id << termcolor::reset << " " << db.artifact_name_by_id(dependency_id)
+               << " resolves symbols: ";
+        const std::map<long long, std::string> symbols = get_symbol_hnames(db, useful_dependency.second);
+        for(const auto& symbol : symbols) {
+          SLOGGER << "\t" << termcolor::blue << symbol.first << termcolor::reset << " " << symbol.second << std::endl;
+        }
+        SLOGGER << std::endl;
       }
     }
+
+    if (!useless_dependencies.empty()) {
+      LOG(debug) << termcolor::green << "Useless dependencies:" << termcolor::reset;
+
+      for(const std::string& ud : useless_dependencies) {
+        LOG(always) << "\t" << ud;
+      }
+    }
+  }
+}
+
+void analyse_useless_dependencies_ldd(Database2& db, const std::vector<long long>& artifacts)
+{
+  for(const long long artifact_id : artifacts) {
+    const std::string artifact = db.artifact_name_by_id(artifact_id);
+    boost::asio::io_service ios;
+
+    std::future<std::string> out_, err_;
+
+    bp::child c(bp::search_path("ldd"), "-u", "-r", artifact,
+                bp::std_in.close(),
+                bp::std_out > out_,
+                bp::std_err > err_,
+                ios);
+
+    ios.run();
+
+    std::vector<std::string> useless_dependencies;
+
+    if (c.exit_code() != 0) {
+      std::stringstream ss(out_.get());
+      std::string line;
+      if (ss) std::getline(ss, line); // Skip first line
+
+      while(ss && std::getline(ss, line)) {
+        useless_dependencies.emplace_back(ltrim_copy(line));
+      }
+    }
+
+    std::sort(useless_dependencies.begin(), useless_dependencies.end());
+
+    const std::string err = trim_copy(err_.get());
+
+    LOG(always && (!useless_dependencies.empty() || !err.empty())) << termcolor::green << "Artifact #" << artifact_id << termcolor::reset << " " << artifact;
+
+    for(const std::string& ud : useless_dependencies) {
+      LOG(always) << "\t" << ud;
+    }
+
+    LOG(warning) << termcolor::red << "stderr: " << termcolor::reset << err;
   }
 }
 
@@ -331,7 +415,12 @@ boost::program_options::options_description Analyse_Command::options()
        "Artifact to export.")
       ("duplicated-symbols", "Analyse duplicated symbols.")
       ("undefined-symbols", "Analyse undefined symbols.")
-      ("useless-dependencies", "Analyse useless dependencies.")
+      ("useless-dependencies",
+       bpo::value<useless_dependencies_analysis_modes>()->implicit_value(useless_dependencies_analysis_modes::symbols, "symbols"),
+       "Analyse useless dependencies.\n"
+       "There are two analysis mode:\n"
+       "- symbols: identify symbols not exported by dependencies.\n"
+       "- ldd: equivalent to ldd -u -r.")
       ;
 
   return opt;
@@ -357,8 +446,8 @@ int Analyse_Command::execute(const std::vector<std::string>& args)
 
   Database2 db(vm["db"].as<std::string>());
 
-  if (vm.count("duplicated-symbols") + vm.count("undefined-symbols") + vm.count("useless-dependencies")!= 1) {
-    std::cerr << "Invalid analytis type" << std::endl;
+  if (vm.count("duplicated-symbols") + vm.count("undefined-symbols") + vm.count("useless-dependencies") != 1) {
+    std::cerr << "Invalid analysis type" << std::endl;
     return -1;
   }
 
@@ -372,8 +461,14 @@ int Analyse_Command::execute(const std::vector<std::string>& args)
     const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db, vm["artifact"].as<std::vector<std::string>>());
     analyse_undefined_symbols(db, artifacts);
   } else if (vm.count("useless-dependencies")) {
+    const auto mode = vm["useless-dependencies"].as<useless_dependencies_analysis_modes>();
     const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db, vm["artifact"].as<std::vector<std::string>>());
-    analyse_useless_dependencies(db, artifacts);
+
+    if (mode == useless_dependencies_analysis_modes::symbols) {
+      analyse_useless_dependencies_symbols(db, artifacts);
+    } else if (mode == useless_dependencies_analysis_modes::ldd) {
+      analyse_useless_dependencies_ldd(db, artifacts);
+    }
   }
 
   return 0;

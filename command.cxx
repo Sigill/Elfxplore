@@ -53,7 +53,7 @@ boost::program_options::options_description Command::default_options()
       ("help,h",
        "Produce help message.")
       ("verbose,v",
-       bpo::value<logger::severity_level>()->default_value(logger::fatal)->notifier(set_log_level),
+       bpo::value<logger::severity_level>()->default_value(logger::fatal, "fatal")->notifier(set_log_level),
        "Verbosity level (trace, debug, info, warning, error, fatal).")
       ("db",
        bpo::value<std::string>()->required()->value_name("file"),

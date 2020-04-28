@@ -115,8 +115,6 @@ public:
 
   int symbol_id_by_name(const std::string& name);
 
-  int symbol_name_by_id(long long id);
-
   void create_symbol_reference(long long artifact_id, long long symbol_id, const char* category, const char type, long long size);
 
   void insert_symbol_references(long long artifact_id, const SymbolReferenceSet& symbols, const char* category);
