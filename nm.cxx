@@ -46,7 +46,9 @@ ProcessResult nm(const std::string& file, SymbolReferenceSet& symbols, const std
       // symbol [clone .cold]
       // DW.ref.__gxx_personality_v0
       if (line[offset + 2] == '.' // There's a lot of .LC??
-          || memrchr(&(line[offset + 2]), '.', line.length() - offset - 2) != NULL)
+          || memrchr(&(line[offset + 2]), '.', line.length() - offset - 2) != NULL
+          || strncmp(&(line[offset + 2]), "__gmon_start__", sizeof("__gmon_start__")) == 0
+          || strncmp(&(line[offset + 2]), "_ITM_", sizeof("_ITM_")) == 0)
         continue;
 
       symbols.emplace(std::string(line, offset + 2), line[offset], address, sz);
