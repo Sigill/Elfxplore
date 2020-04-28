@@ -25,25 +25,36 @@ namespace bp = boost::process;
 namespace {
 
 std::vector<bfs::path> load_default_library_directories() {
-  std::regex search_dir_regex(R"CMD(SEARCH_DIR\("=?([^"]+)"\))CMD");
   bp::ipstream pipe_stream;
-  bp::child c("gcc -Xlinker --verbose", bp::std_out > pipe_stream, bp::std_err > bp::null);
+  bp::child c("gcc --print-search-dir", bp::std_out > pipe_stream, bp::std_err > bp::null);
 
-  std::vector<bfs::path> directories;
+  std::vector<bfs::path> paths;
+
+  const std::string prefix = "libraries: =";
 
   std::string line;
   while (pipe_stream && std::getline(pipe_stream, line)) {
-    auto matches_begin = std::sregex_iterator(line.begin(), line.end(), search_dir_regex);
-    auto matches_end = std::sregex_iterator();
-    for (std::sregex_iterator it = matches_begin; it != matches_end; ++it) {
-      std::smatch match = *it;
-      directories.emplace_back(match[1].str());
+    if (!starts_with(line, prefix))
+      continue;
+
+    line.erase(0, prefix.size());
+
+    const std::vector<std::string> directories = split(line, ':');
+    for(const std::string& dir : directories)
+    {
+      boost::system::error_code ec;
+      bfs::path path = bfs::canonical(dir, ec);
+      if ((bool)ec) {
+        LOG(warning) << "Unable to resolve " << dir;
+      } else {
+        paths.push_back(path);
+      }
     }
   }
 
   c.wait();
 
-  return directories;
+  return paths;
 }
 
 const std::vector<bfs::path>& default_library_directories() {
@@ -108,8 +119,14 @@ struct CompilationOperation {
   }
 };
 
+void locate_and_add_library(const std::string& name, CompilationOperation& cmd) {
+  const std::string realpath = locate_library(name, default_library_directories(), cmd.library_directories);
+  if (realpath.empty()) { cmd.add_error("Unable to locate library " + name + "library"); }
+  else { cmd.add_dependency(realpath, library_type(realpath)); }
+}
+
 const std::vector<std::string> ignored_single_args = {"-D", "-w", "-W", "-O", "-m", "-g", "-f", "-MD", "-c",
-                                                      "-std", "-rdynamic", "-shared", "-fopenmp", "-pipe",
+                                                      "-std", "-rdynamic", "-shared", "-pipe",
                                                       "-ansi", "-pedantic"};
 const std::vector<std::string> ignored_double_args = {"-MT", "-MF"};
 
@@ -131,16 +148,24 @@ bool is_cc(const std::string& command) {
   return std::find(gcc_commands.begin(), gcc_commands.end(), command) != gcc_commands.end();
 }
 
-CompilationOperation parse_cc_args(const bfs::path& wd, const std::vector<std::string>& argv)
+bool is_cxx(const std::string& command) {
+  return command == "c++" || command == "g++";
+}
+
+CompilationOperation parse_cc_args(const std::string& executable, const bfs::path& wd, const std::vector<std::string>& argv)
 {
   CompilationOperation cmd;
 
   auto absolute = [&wd](const std::string& path) { return expand_path(path, wd); };
 
+  bool openmp = false;
+
   for(size_t i = 0; i < argv.size(); ++i) {
     const std::string& arg = argv[i];
 
-    if (is_arg(ignored_single_args, arg)) {
+    if (arg == "-fopenmp") {
+      openmp = true;
+    } else if (is_arg(ignored_single_args, arg)) {
       continue;
     } else if (is_arg(ignored_double_args, arg)) {
       ++i;
@@ -149,21 +174,25 @@ CompilationOperation parse_cc_args(const bfs::path& wd, const std::vector<std::s
     } else if (starts_with(arg, "-I")) {
       const std::string value = get_arg(argv, i);
       try { cmd.add_include_dir(absolute(value)); }
-      catch (boost::filesystem::filesystem_error&) { cmd.add_error("Invalid -I: " + value); }
+      catch (boost::filesystem::filesystem_error&) { cmd.add_error("Invalid -I " + value); }
     } else if (starts_with(arg, "-L")) {
       const std::string value = get_arg(argv, i);
       try { cmd.add_library_dir(absolute(value)); }
-      catch (boost::filesystem::filesystem_error&) { cmd.add_error("Invalid -L: " + value); }
+      catch (boost::filesystem::filesystem_error&) { cmd.add_error("Invalid -L " + value); }
     } else if (starts_with(arg, "-l")) {
-      const std::string value = get_arg(argv, i);
-      const std::string realpath = locate_library(value, default_library_directories(), cmd.library_directories);
-      if (realpath.empty()) { cmd.add_error("Invalid -l: " + value); }
-      else { cmd.add_dependency(realpath, library_type(realpath)); }
+      locate_and_add_library(get_arg(argv, i), cmd);
     } else if (starts_with(arg, "-o")) {
       cmd.output = absolute(get_arg(argv, i));
       cmd.output_type = output_type(cmd.output);
     } else {
       cmd.add_dependency(absolute(arg), input_type(arg));
+    }
+  }
+
+  if (cmd.output_type == "shared") {
+    if (openmp) {
+      locate_and_add_library("gomp", cmd);
+      locate_and_add_library("pthread", cmd);
     }
   }
 
@@ -197,7 +226,7 @@ CompilationOperation parse_command(const bfs::path& directory, const std::string
   const std::vector<std::string> argv = bpo::split_unix(args);
 
   if (is_cc(executable)) {
-    return parse_cc_args(directory, argv);
+    return parse_cc_args(executable, directory, argv);
   } else if (executable == "ar") {
     return parse_ar_args(directory, argv);
   } else {
@@ -283,35 +312,55 @@ void extract_dependencies(Database2& db) {
   }
 }
 
-std::vector<ProcessResult> extract_symbols_from_file(const std::string& usable_path, ArtifactSymbols& symbols) {
-  std::vector<ProcessResult> processes;
-
-  const bool is_dynamic = output_type(usable_path) == std::string("shared");
-
-  processes.emplace_back(nm_undefined(usable_path, symbols.undefined, symbol_table::normal));
-  if (is_dynamic && symbols.undefined.empty())
-    processes.emplace_back(nm_undefined(usable_path, symbols.undefined, symbol_table::dynamic));
-
-  processes.emplace_back(nm_defined_extern(usable_path, symbols.external, symbol_table::normal));
-  if (is_dynamic && symbols.external.empty())
-    processes.emplace_back(nm_defined_extern(usable_path, symbols.external, symbol_table::dynamic));
-
-  processes.emplace_back(nm_defined(usable_path, symbols.external, symbol_table::normal));
-  if (is_dynamic && symbols.external.empty())
-    processes.emplace_back(nm_defined(usable_path, symbols.external, symbol_table::dynamic));
-
-  substract_set(symbols.internal, symbols.external);
-
-  return processes;
-}
-
 namespace {
+
 inline bool has_failure(const std::vector<ProcessResult>& processes) {
   return std::any_of(processes.begin(), processes.end(), failed);
 }
+
+struct SymbolExtractionStatus {
+  std::vector<ProcessResult> processes;
+  bool linker_script = false;
+};
+
+bool has_failure(const SymbolExtractionStatus& status) {
+  return status.linker_script || has_failure(status.processes);
+}
+
 } // anonymous namespace
 
-void insert_symbols(Database2& db, const std::string& path, ArtifactSymbols& symbols, std::vector<ProcessResult>& processes) {
+SymbolExtractionStatus extract_symbols_from_file(const std::string& usable_path, ArtifactSymbols& symbols) {
+  SymbolExtractionStatus status;
+
+  const std::string type = output_type(usable_path);
+  const bool is_dynamic = type == "shared";
+
+  std::ifstream file(usable_path, std::ios::in | std::ios::binary);
+  char magic[4] = {0, 0, 0, 0};
+  file.read(magic, 4);
+  file.close();
+  status.linker_script = !(magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F');
+
+  if (!status.linker_script) {
+    status.processes.emplace_back(nm_undefined(usable_path, symbols.undefined, symbol_table::normal));
+    if (is_dynamic && symbols.undefined.empty())
+      status.processes.emplace_back(nm_undefined(usable_path, symbols.undefined, symbol_table::dynamic));
+
+    status.processes.emplace_back(nm_defined_extern(usable_path, symbols.external, symbol_table::normal));
+    if (is_dynamic && symbols.external.empty())
+      status.processes.emplace_back(nm_defined_extern(usable_path, symbols.external, symbol_table::dynamic));
+
+    status.processes.emplace_back(nm_defined(usable_path, symbols.external, symbol_table::normal));
+    if (is_dynamic && symbols.external.empty())
+      status.processes.emplace_back(nm_defined(usable_path, symbols.external, symbol_table::dynamic));
+
+    substract_set(symbols.internal, symbols.external);
+  }
+
+  return status;
+}
+
+void insert_symbols(Database2& db, const std::string& path, ArtifactSymbols& symbols, const SymbolExtractionStatus& status) {
   long long artifact_id = db.artifact_id_by_name(path);
 
   if (artifact_id == -1) {
@@ -319,9 +368,11 @@ void insert_symbols(Database2& db, const std::string& path, ArtifactSymbols& sym
     artifact_id = db.last_id();
   }
 
-  LOG(info || has_failure(processes)) << termcolor::green << "Artifact #" << artifact_id << termcolor::reset << " " << path;
+  LOG(info || has_failure(status)) << termcolor::green << "Artifact #" << artifact_id << termcolor::reset << " " << path;
 
-  for(const ProcessResult& process : processes) {
+  LOG(always && status.linker_script) << termcolor::red << "Linker scripts are not supported" << termcolor::reset;
+
+  for(const ProcessResult& process : status.processes) {
     LOG(always && failed(process)) << process.command;
     LOG(always && process.code != 0) << "Status: " << termcolor::red << (int)process.code << termcolor::reset;
     LOG(always && !process.err.empty()) << termcolor::red << "stderr: " << termcolor::reset << process.err;
@@ -334,16 +385,16 @@ class SymbolExtractor {
 private:
   Database2& db;
   std::vector<ArtifactSymbols> symbols_pool;
-  std::vector<std::vector<ProcessResult>> processes_pool;
+  std::vector<SymbolExtractionStatus> extraction_status_pool;
 
 public:
   explicit SymbolExtractor(Database2& db)
-    : db(db), symbols_pool() , processes_pool() {}
+    : db(db), symbols_pool() , extraction_status_pool() {}
 
   void operator()(const std::vector<std::string>& files) {
     while(symbols_pool.size() < files.size()) {
       symbols_pool.emplace_back();
-      processes_pool.emplace_back();
+      extraction_status_pool.emplace_back();
     }
 
 #pragma omp parallel for
@@ -351,13 +402,14 @@ public:
       symbols_pool[i].undefined.clear();
       symbols_pool[i].external.clear();
       symbols_pool[i].internal.clear();
-      processes_pool[i].clear();
+      extraction_status_pool[i].linker_script = false;
+      extraction_status_pool[i].processes.clear();
 
-      processes_pool[i] = extract_symbols_from_file(files[i], symbols_pool[i]);
+      extraction_status_pool[i] = extract_symbols_from_file(files[i], symbols_pool[i]);
     }
 
     for(size_t i = 0; i < files.size(); ++i) {
-      insert_symbols(db, files[i], symbols_pool[i], processes_pool[i]);
+      insert_symbols(db, files[i], symbols_pool[i], extraction_status_pool[i]);
     }
   }
 };
