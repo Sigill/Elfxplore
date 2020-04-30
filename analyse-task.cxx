@@ -1,8 +1,10 @@
-#include "analyse-command.hxx"
+#include "analyse-task.hxx"
 
 #include <iostream>
+#include <iomanip>
 #include <sstream>
 #include <algorithm>
+#include <chrono>
 
 #include <boost/program_options.hpp>
 #include <boost/process.hpp>
@@ -15,6 +17,7 @@
 #include "Database2.hxx"
 #include "query-utils.hxx"
 #include "utils.hxx"
+#include "command-utils.hxx"
 #include "logger.hxx"
 
 namespace bpo = boost::program_options;
@@ -392,9 +395,76 @@ void analyse_useless_dependencies_ldd(Database2& db, const std::vector<long long
   }
 }
 
+std::vector<CompilationCommand> get_object_commands(Database2& db)
+{
+  std::vector<CompilationCommand> commands;
+
+  std::stringstream ss;
+  ss << R"(
+select commands.id, commands.directory, commands.executable, commands.args, artifacts.name
+from commands
+inner join artifacts
+on artifacts.generating_command_id = commands.id
+where artifacts.type = "object"
+)";
+
+  SQLite::Statement stm = db.statement(ss.str());
+
+  while(stm.executeStep()) {
+    commands.emplace_back(CompilationCommand{stm.getColumn(0).getInt64(),
+                                             stm.getColumn(1).getString(),
+                                             stm.getColumn(2).getString(),
+                                             stm.getColumn(3).getString(),
+                                             stm.getColumn(4).getString(),
+                                             {}});
+  }
+
+  return commands;
+}
+
+double time_preprocessor(const CompilationCommand& command) {
+  const std::vector<std::string> argv = bpo::split_unix(command.args);
+
+  std::ostringstream ss;
+  ss << command.executable;
+
+  for(size_t i = 0; i < argv.size(); ++i) {
+    const std::string& arg = argv[i];
+
+    if (starts_with(arg, "-o")) {
+      ss << " -o /dev/null";
+
+      if (arg.size() == 2) {
+        ++i;
+      }
+    } else {
+      ss << " " << arg;
+    }
+  }
+
+  ss << " -E";
+
+  boost::asio::io_service ios;
+  std::future<std::string> err_;
+
+  const auto start = std::chrono::high_resolution_clock::now();
+
+  bp::child c(ss.str(),
+              bp::std_in.close(),
+              bp::std_out > bp::null,
+              bp::std_err > err_,
+              ios);
+
+  ios.run();
+  c.wait();
+
+  const std::chrono::duration<double> elapsed = std::chrono::high_resolution_clock::now() - start;
+  return elapsed.count();
+}
+
 } // anonymous namespace
 
-boost::program_options::options_description Analyse_Command::options()
+boost::program_options::options_description Analyse_Task::options()
 {
   bpo::options_description opt = default_options();
   opt.add_options()
@@ -421,12 +491,13 @@ boost::program_options::options_description Analyse_Command::options()
        "There are two analysis mode:\n"
        "- symbols: identify symbols not exported by dependencies.\n"
        "- ldd: equivalent to ldd -u -r.")
+      ("preproc-time", "Time spent preprocessing files.")
       ;
 
   return opt;
 }
 
-int Analyse_Command::execute(const std::vector<std::string>& args)
+int Analyse_Task::execute(const std::vector<std::string>& args)
 {
   bpo::variables_map vm;
 
@@ -446,7 +517,10 @@ int Analyse_Command::execute(const std::vector<std::string>& args)
 
   Database2 db(vm["db"].as<std::string>());
 
-  if (vm.count("duplicated-symbols") + vm.count("undefined-symbols") + vm.count("useless-dependencies") != 1) {
+  if (vm.count("duplicated-symbols")
+      + vm.count("undefined-symbols")
+      + vm.count("useless-dependencies")
+      + vm.count("preproc-time") != 1) {
     std::cerr << "Invalid analysis type" << std::endl;
     return -1;
   }
@@ -468,6 +542,26 @@ int Analyse_Command::execute(const std::vector<std::string>& args)
       analyse_useless_dependencies_symbols(db, artifacts);
     } else if (mode == useless_dependencies_analysis_modes::ldd) {
       analyse_useless_dependencies_ldd(db, artifacts);
+    }
+  } else if (vm.count("preproc-time")) {
+    auto commands = get_object_commands(db);
+    std::vector<std::pair<long long, double>> measures; measures.reserve(commands.size());
+
+    for(size_t i = 0; i < commands.size(); ++i) {
+      const CompilationCommand& command = commands[i];
+      measures.emplace_back(command.id, time_preprocessor(command));
+
+      std::cout << (i+1) << "/" << commands.size() << "\r";
+      std::cout.flush();
+    }
+    std::cout << std::endl;
+
+    std::sort(measures.begin(), measures.end(),
+              [](const std::pair<long long, double>& a, const std::pair<long long, double>& b){ return a.second > b.second; });
+    for(const std::pair<long long, double>& m: measures) {
+      const auto sources = db.get_sources(m.first);
+      std::cout << std::right << std::fixed << std::setw(8) << std::setprecision(2) << m.second << " s "
+                << sources.front() << std::endl;
     }
   }
 

@@ -1,4 +1,4 @@
-#include "db-command.hxx"
+#include "db-task.hxx"
 
 #include <iostream>
 #include <boost/program_options.hpp>
@@ -7,7 +7,7 @@
 
 namespace bpo = boost::program_options;
 
-boost::program_options::options_description DB_Command::options()
+boost::program_options::options_description DB_Task::options()
 {
   bpo::options_description opt = default_options();
   opt.add_options()
@@ -19,7 +19,7 @@ boost::program_options::options_description DB_Command::options()
   return opt;
 }
 
-int DB_Command::execute(const std::vector<std::string>& args)
+int DB_Task::execute(const std::vector<std::string>& args)
 {
   bpo::positional_options_description p;
   p.add("db", 1);

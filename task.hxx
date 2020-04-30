@@ -1,18 +1,22 @@
-#ifndef COMMAND_HXX
-#define COMMAND_HXX
+#ifndef TASK_HXX
+#define TASK_HXX
 
 #include <vector>
 #include <string>
 #include <boost/program_options.hpp>
 
-class Command
+class Task
 {
 private:
   std::vector<std::string> mCommand;
+  bool mDryRun = false;
+
 public:
-  Command(const std::vector<std::string>& mCommand);
+  Task(const std::vector<std::string>& mCommand);
   void usage(std::ostream& out);
   virtual int execute(const std::vector<std::string>& args) = 0;
+
+  bool dryrun() const { return mDryRun; }
 
 protected:
   boost::program_options::options_description default_options();

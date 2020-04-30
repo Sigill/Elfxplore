@@ -1,4 +1,4 @@
-#include "command.hxx"
+#include "task.hxx"
 
 #include <iostream>
 
@@ -32,11 +32,11 @@ void set_log_level(const logger::severity_level& level) {
 }
 } // anonymous namespace
 
-Command::Command(const std::vector<std::string>& command)
+Task::Task(const std::vector<std::string>& command)
   : mCommand(command)
 {}
 
-void Command::usage(std::ostream& out)
+void Task::usage(std::ostream& out)
 {
   out << "Usage:";
   for(const std::string& c : mCommand)
@@ -45,7 +45,7 @@ void Command::usage(std::ostream& out)
   out << options();
 }
 
-boost::program_options::options_description Command::default_options()
+boost::program_options::options_description Task::default_options()
 {
   bpo::options_description opts("Options");
 
@@ -55,6 +55,9 @@ boost::program_options::options_description Command::default_options()
       ("verbose,v",
        bpo::value<logger::severity_level>()->default_value(logger::fatal, "fatal")->notifier(set_log_level),
        "Verbosity level (trace, debug, info, warning, error, fatal).")
+      ("dry-run,n",
+       bpo::bool_switch(&mDryRun),
+       "Do not write anything to the database.")
       ("db",
        bpo::value<std::string>()->required()->value_name("file"),
        "SQLite database.")

@@ -1,4 +1,4 @@
-#include "artifacts-command.hxx"
+#include "artifacts-task.hxx"
 
 #include <iostream>
 
@@ -9,7 +9,7 @@
 
 namespace bpo = boost::program_options;
 
-boost::program_options::options_description ArtifactsCommand::options()
+boost::program_options::options_description Artifacts_Task::options()
 {
   bpo::options_description opt = default_options();
   opt.add_options()
@@ -24,7 +24,7 @@ boost::program_options::options_description ArtifactsCommand::options()
   return opt;
 }
 
-int ArtifactsCommand::execute(const std::vector<std::string>& args)
+int Artifacts_Task::execute(const std::vector<std::string>& args)
 {
   bpo::variables_map vm;
 

@@ -1,16 +1,16 @@
-#ifndef EXTRACT_COMMAND_HXX
-#define EXTRACT_COMMAND_HXX
+#ifndef EXTRACT_TASK_HXX
+#define EXTRACT_TASK_HXX
 
 #include <vector>
 #include <string>
 
-#include "command.hxx"
+#include "task.hxx"
 
-class Extract_Command : public Command {
+class Extract_Task : public Task {
 public:
-  using Command::Command;
+  using Task::Task;
   boost::program_options::options_description options() override;
   int execute(const std::vector<std::string>& args) override;
 };
 
-#endif // EXTRACT_COMMAND_HXX
+#endif // EXTRACT_TASK_HXX

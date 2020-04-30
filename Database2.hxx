@@ -54,13 +54,6 @@ template<> struct less<Dependency>
 
 } // namespace std
 
-struct Artifact {
-  long long id = -1;
-  std::string name;
-  std::string type;
-  long long generating_command_id;
-};
-
 class Database2 {
 public:
   SQLite::Database db;
@@ -70,7 +63,7 @@ private:
   Lazy<SQLite::Statement> create_artifact_stm;
   Lazy<SQLite::Statement> artifact_id_by_name_stm;
   Lazy<SQLite::Statement> artifact_name_by_id_stm;
-  Lazy<SQLite::Statement> artifact_by_name_stm;
+  Lazy<SQLite::Statement> artifact_id_by_command_stm;
   Lazy<SQLite::Statement> artifact_set_generating_command_stm;
   Lazy<SQLite::Statement> artifact_set_type_stm;
   Lazy<SQLite::Statement> create_symbol_stm;
@@ -79,6 +72,7 @@ private:
   Lazy<SQLite::Statement> create_dependency_stm;
   Lazy<SQLite::Statement> find_dependencies_stm;
   Lazy<SQLite::Statement> find_dependees_stm;
+  Lazy<SQLite::Statement> get_sources_stm;
   Lazy<SQLite::Statement> undefined_symbols_stm;
 
 public:
@@ -97,29 +91,39 @@ public:
 
   long long last_id();
 
-  void create_command(const std::string& directory, const std::string& executable, const std::string& args, const std::string& output_type);
+  long long create_command(const std::string& directory, const std::string& executable, const std::string& args);
+
+  long long count_artifacts();
+
+  std::map<std::string, long long> count_artifacts_by_type();
 
   void create_artifact(const std::string& name, const std::string& type, const long long generating_command_id = -1);
-
-  bool artifact_by_name(Artifact& artifact);
 
   long long artifact_id_by_name(const std::string& name);
 
   std::string artifact_name_by_id(long long id);
 
+  long long artifact_id_by_command(const long long command_id);
+
   void artifact_set_generating_command(const long long artifact_id, const long long command_id);
 
   void artifact_set_type(const long long artifact_id, const std::string& type);
 
+  long long count_symbols();
+
   void create_symbol(const std::string& name);
 
   int symbol_id_by_name(const std::string& name);
+
+  long long count_symbol_references();
 
   void create_symbol_reference(long long artifact_id, long long symbol_id, const char* category, const char type, long long size);
 
   void insert_symbol_references(long long artifact_id, const SymbolReferenceSet& symbols, const char* category);
 
   void insert_symbol_references(long long artifact_id, const ArtifactSymbols& symbols);
+
+  long long count_dependencies();
 
   void create_dependency(long long dependee_id, long long dependency_id);
 
@@ -131,6 +135,8 @@ public:
   std::vector<long long> dependencies(long long dependee_id);
 
   std::vector<long long> dependees(long long dependency_id);
+
+  std::vector<std::string> get_sources(const long long command_id);
 
   std::vector<long long> undefined_symbols(const long long artifact_id);
 

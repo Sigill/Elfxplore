@@ -1,16 +1,17 @@
-#ifndef DBCOMMAND_HXX
-#define DBCOMMAND_HXX
+#ifndef ARTIFACTSCOMMAND_HXX
+#define ARTIFACTSCOMMAND_HXX
 
 #include <vector>
 #include <string>
 
-#include "command.hxx"
+#include "task.hxx"
 
-class DB_Command : public Command {
+class Artifacts_Task : public Task
+{
 public:
-  using Command::Command;
+  using Task::Task;
   boost::program_options::options_description options() override;
   int execute(const std::vector<std::string>& args) override;
 };
 
-#endif // DBCOMMAND_HXX
+#endif // ARTIFACTSCOMMAND_HXX

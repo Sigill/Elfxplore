@@ -21,12 +21,12 @@ bool valid_symbol_char(const char c)
 
 Database2::Database2(const std::string& file)
   : db(file, SQLite::OPEN_CREATE | SQLite::OPEN_READWRITE)
-  , create_command_stm(LAZYSTM("insert into commands (directory, executable, args, output_type) values (?, ?, ?, ?)"))
+  , create_command_stm(LAZYSTM("insert into commands (directory, executable, args) values (?, ?, ?)"))
   , create_artifact_stm(LAZYSTM("insert into artifacts (name, type, generating_command_id) values (?, ?, ?)"))
   , artifact_id_by_name_stm(LAZYSTM("select id from artifacts where name = ?"))
   , artifact_name_by_id_stm(LAZYSTM("select name from artifacts where id = ?"))
-  , artifact_by_name_stm(LAZYSTM("select id, type, generating_command_id from artifacts where name = ?"))
-  , artifact_set_generating_command_stm(LAZYSTM("supdate artifacts set generating_command_id = ? where id = ?"))
+  , artifact_id_by_command_stm(LAZYSTM("select id from artifacts where generating_command_id = ?"))
+  , artifact_set_generating_command_stm(LAZYSTM("update artifacts set generating_command_id = ? where id = ?"))
   , artifact_set_type_stm(LAZYSTM("supdate artifacts set type = ? where id = ?"))
   , create_symbol_stm(LAZYSTM("insert into symbols (name, dname) values (?, ?)"))
   , symbol_id_by_name_stm(LAZYSTM("select id from symbols where name = ?"))
@@ -34,6 +34,9 @@ Database2::Database2(const std::string& file)
   , create_dependency_stm(LAZYSTM("insert into dependencies (dependee_id, dependency_id) values (?, ?)"))
   , find_dependencies_stm(LAZYSTM("select dependency_id from dependencies where dependee_id = ?"))
   , find_dependees_stm(LAZYSTM("select dependee_id from dependencies where dependency_id = ?"))
+  , get_sources_stm(LAZYSTM(R"(select artifacts.name from artifacts
+inner join dependencies on dependencies.dependency_id = artifacts.id
+where dependencies.dependee_id = ? and artifacts.type = "source")"))
   , undefined_symbols_stm(LAZYSTM("select symbol_id from symbol_references where category = \"undefined\" and artifact_id = ?"))
 {
   db.exec("PRAGMA encoding='UTF-8';");
@@ -49,11 +52,9 @@ create table if not exists "commands" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "directory" VARCHAR(256) NOT NULL,
   "executable" VARCHAR(256) NOT NULL,
-  "args" TEXT NOT NULL,
-  "output_type" VARCHAR(16) NOT NULL
+  "args" TEXT NOT NULL
 );
 create unique index "unique_commands" on "commands" ("directory", "executable", "args");
-create index "command_by_type" on "commands" ("type");
 
 create table if not exists "artifacts" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -126,16 +127,36 @@ long long Database2::last_id()
   return db.getLastInsertRowid();
 }
 
-void Database2::create_command(const std::string& directory, const std::string& executable, const std::string& args, const std::string& output_type) {
+long long Database2::create_command(const std::string& directory, const std::string& executable, const std::string& args) {
   auto& stm = *create_command_stm;
 
   stm.bind(1, directory);
   stm.bind(2, executable);
   stm.bind(3, args);
-  stm.bind(4, output_type);
   stm.exec();
   stm.reset();
   stm.clearBindings();
+
+  return db.getLastInsertRowid();
+}
+
+long long Database2::count_artifacts()
+{
+  auto stm = statement("select count(*) from artifacts");
+  return get_id(stm);
+}
+
+std::map<std::string, long long> Database2::count_artifacts_by_type()
+{
+  std::map<std::string, long long> stats;
+
+  auto stm = statement("select type, count(*)from artifacts group by type");
+
+  while(stm.executeStep()) {
+    stats.emplace(stm.getColumn(0).getString(), stm.getColumn(1).getInt64());
+  }
+
+  return stats;
 }
 
 void Database2::create_artifact(const std::string& name, const std::string& type, const long long generating_command_id) {
@@ -156,32 +177,20 @@ long long Database2::artifact_id_by_name(const std::string& name) {
   return get_id(stm);
 }
 
-bool Database2::artifact_by_name(Artifact& artifact)
-{
-  auto& stm = *artifact_by_name_stm;
-  stm.bind(1, artifact.name);
-
-  bool found = false;
-
-  if(stm.executeStep()) {
-    found = true;
-    artifact.id = stm.getColumn(0).getInt64();
-    artifact.type = stm.getColumn(1).getString();
-    artifact.generating_command_id = stm.getColumn(2).getInt64();
-  }
-
-  stm.reset();
-  stm.clearBindings();
-
-  return found;
-}
-
 std::string Database2::artifact_name_by_id(long long id)
 {
   auto& stm = *artifact_name_by_id_stm;
 
   stm.bind(1, id);
   return get_string(stm);
+}
+
+long long Database2::artifact_id_by_command(const long long command_id)
+{
+  auto& stm = *artifact_id_by_command_stm;
+
+  stm.bind(1, command_id);
+  return get_id(stm);
 }
 
 void Database2::artifact_set_generating_command(const long long artifact_id, const long long command_id)
@@ -202,6 +211,12 @@ void Database2::artifact_set_type(const long long artifact_id, const std::string
   stm.exec();
   stm.reset();
   stm.clearBindings();
+}
+
+long long Database2::count_symbols()
+{
+  auto stm = statement("select count(*) from symbols");
+  return get_id(stm);
 }
 
 void Database2::create_symbol(const std::string& name) {
@@ -227,6 +242,12 @@ int Database2::symbol_id_by_name(const std::string& name) {
   auto& stm = *symbol_id_by_name_stm;
 
   stm.bind(1, name);
+  return get_id(stm);
+}
+
+long long Database2::count_symbol_references()
+{
+  auto stm = statement("select count(*) from symbol_references");
   return get_id(stm);
 }
 
@@ -267,6 +288,12 @@ void Database2::insert_symbol_references(long long artifact_id, const ArtifactSy
   insert_symbol_references(artifact_id, symbols.undefined, "undefined");
   insert_symbol_references(artifact_id, symbols.external, "external");
   insert_symbol_references(artifact_id, symbols.internal, "internal");
+}
+
+long long Database2::count_dependencies()
+{
+  auto stm = statement("select count(*) from dependencies");
+  return get_id(stm);
 }
 
 void Database2::create_dependency(long long dependee_id, long long dependency_id)
@@ -360,6 +387,24 @@ std::vector<long long> Database2::dependees(long long dependency_id)
   stm.bind(1, dependency_id);
 
   return get_ids(stm);
+}
+
+std::vector<std::string> Database2::get_sources(const long long command_id)
+{
+  std::vector<std::string> sources;
+
+  const long long artifact_id = artifact_id_by_command(command_id);
+
+  auto& stm = *get_sources_stm;
+  stm.bind(1, artifact_id);
+  while(stm.executeStep()) {
+    sources.emplace_back(stm.getColumn(0).getString());
+  }
+
+  stm.reset();
+  stm.clearBindings();
+
+  return sources;
 }
 
 std::vector<long long> Database2::undefined_symbols(const long long artifact_id)

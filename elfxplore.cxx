@@ -4,28 +4,28 @@
 #include <memory>
 #include <functional>
 
-#include "command.hxx"
-#include "command-command.hxx"
-#include "db-command.hxx"
-#include "extract-command.hxx"
-#include "analyse-command.hxx"
-#include "dependencies-command.hxx"
-#include "artifacts-command.hxx"
+#include "task.hxx"
+#include "command-task.hxx"
+#include "db-task.hxx"
+#include "extract-task.hxx"
+#include "analyse-task.hxx"
+#include "dependencies-task.hxx"
+#include "artifacts-task.hxx"
 
 namespace {
 #define COMMAND_FACTORY(T) [](const std::vector<std::string>& args){ return std::make_unique<T>(args); }
 
-using CommandFactory = std::function<std::unique_ptr<Command>(const std::vector<std::string>&)>;
+using CommandFactory = std::function<std::unique_ptr<Task>(const std::vector<std::string>&)>;
 const std::vector<std::pair<std::string, CommandFactory>> commands = {
-    {"db"                  , COMMAND_FACTORY(DB_Command)},
-    {"command"             , COMMAND_FACTORY(Command_Command)},
-    {"extract"             , COMMAND_FACTORY(Extract_Command)},
-    {"dependencies"        , COMMAND_FACTORY(Dependencies_Command)},
-    {"artifacts"           , COMMAND_FACTORY(ArtifactsCommand)},
-    {"analyse"             , COMMAND_FACTORY(Analyse_Command)},
+    {"db"                  , COMMAND_FACTORY(DB_Task)},
+    {"command"             , COMMAND_FACTORY(Command_Task)},
+    {"extract"             , COMMAND_FACTORY(Extract_Task)},
+    {"dependencies"        , COMMAND_FACTORY(Dependencies_Task)},
+    {"artifacts"           , COMMAND_FACTORY(Artifacts_Task)},
+    {"analyse"             , COMMAND_FACTORY(Analyse_Task)},
 };
 
-std::unique_ptr<Command> get_command(const std::vector<std::string>& args) {
+std::unique_ptr<Task> get_command(const std::vector<std::string>& args) {
   auto factory = std::find_if(commands.begin(),
                               commands.end(),
                               [&name=args.back()](const std::pair<std::string, CommandFactory>& cmd){ return cmd.first == name; });
@@ -73,7 +73,7 @@ int main(int argc, char** argv)
 
   args.emplace_back(argv[i]);
 
-  std::unique_ptr<Command> cmd = get_command(args);
+  std::unique_ptr<Task> cmd = get_command(args);
   if (cmd) {
     if (print_help) {
       cmd->usage(std::cout);

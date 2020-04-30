@@ -4,11 +4,11 @@
 #include <vector>
 #include <string>
 
-#include "command.hxx"
+#include "task.hxx"
 
-class Dependencies_Command : public Command {
+class Dependencies_Task : public Task {
 public:
-  using Command::Command;
+  using Task::Task;
   boost::program_options::options_description options() override;
   int execute(const std::vector<std::string>& args) override;
 };

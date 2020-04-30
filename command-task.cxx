@@ -1,4 +1,4 @@
-#include "command-command.hxx"
+#include "command-task.hxx"
 
 #include <iostream>
 #include <boost/tokenizer.hpp>
@@ -7,72 +7,27 @@
 #include "Database2.hxx"
 #include "utils.hxx"
 #include "logger.hxx"
+#include "command-utils.hxx"
 
 namespace bpo = boost::program_options;
 namespace bfs = boost::filesystem;
 
 namespace {
 
-struct CompilationCommand {
-  std::string directory;
-  std::string executable;
-  std::string args;
-  std::string output_type;
-};
-
-const std::vector<std::string> gcc_commands = {"cc", "c++", "gcc", "g++"};
-
-bool is_cc(const std::string& command) {
-  return std::find(gcc_commands.begin(), gcc_commands.end(), command) != gcc_commands.end();
-}
-
-using Tokenizer = boost::tokenizer<boost::escaped_list_separator<char>, typename std::string::const_iterator, std::string>;
-
-bool next_token(Tokenizer::iterator& cur, const Tokenizer::iterator& end, std::string& out) {
-  if (cur == end)
-    return false;
-
-  out = *cur;
-  ++cur;
-  return true;
-}
-
 void process_command(const std::string& line, std::vector<CompilationCommand>& commands) {
   CompilationCommand command;
+  parse_command(line, command);
 
-  Tokenizer tok(line.begin(), line.end(), boost::escaped_list_separator<char>("\\", " \t", "'\""));
+  LOG(info || !command.is_complete())
+      << termcolor::green << "Processing command " << termcolor::reset << line;
 
-  typename Tokenizer::iterator cur_token(tok.begin()), end_token(tok.end());
-
-  const bool valid_line = next_token(cur_token, end_token, command.directory) == true
-      && next_token(cur_token, end_token, command.executable) == true
-      && cur_token != end_token;
-
-  if (valid_line) {
-    command.args = std::string(cur_token.base(), line.end());
-
-    if (is_cc(command.executable)) {
-      for (; cur_token != end_token; ++cur_token) {
-        if (starts_with(*cur_token, "-o")) {
-          if (cur_token->size() == 2) {
-            command.output_type = output_type(*cur_token);
-          } else {
-            ++cur_token;
-            if (cur_token != end_token) {
-              command.output_type = output_type(*cur_token);
-            }
-          }
-        }
-      }
-    } else if (command.executable == "ar") {
-      command.output_type = "static";
-    }
+  if (command.executable.empty() || command.executable.empty() || command.args.empty()) {
+    LOG(always) << termcolor::red << "Error: not enough arguments" << termcolor::reset;
+    return;
   }
 
-  LOG(info || !valid_line || command.output_type.empty()) << termcolor::green << "Processing command " << termcolor::reset << line;
-
-  if (!valid_line) {
-    LOG(always) << termcolor::red << "Error: not enough arguments" << termcolor::reset;
+  if (command.output.empty()) {
+    LOG(always) << termcolor::red << "Error: no output indentified" << termcolor::reset;
     return;
   }
 
@@ -82,6 +37,9 @@ void process_command(const std::string& line, std::vector<CompilationCommand>& c
   } else {
     LOG(debug) << "Output type: " << command.output_type;
   }
+
+  LOG(info) << termcolor::blue << "Directory: " << termcolor::reset << command.directory;
+  LOG(info) << termcolor::blue << "Output: "  << termcolor::reset << "(" << command.output_type << ") " << command.output;
 
   commands.emplace_back(std::move(command));
 }
@@ -95,7 +53,7 @@ void process_commands(std::istream& in, std::vector<CompilationCommand>& operati
 
 } // anonymous namespace
 
-boost::program_options::options_description Command_Command::options()
+boost::program_options::options_description Command_Task::options()
 {
   bpo::options_description opt = default_options();
   opt.add_options()
@@ -108,7 +66,7 @@ boost::program_options::options_description Command_Command::options()
   return opt;
 }
 
-int Command_Command::execute(const std::vector<std::string>& args)
+int Command_Task::execute(const std::vector<std::string>& args)
 {
   bpo::positional_options_description p;
   p.add("import", -1);
@@ -146,17 +104,28 @@ int Command_Command::execute(const std::vector<std::string>& args)
 
   Database2 db(vm["db"].as<std::string>());
 
-  {
-    SQLite::Transaction transaction(db.database());
+  SQLite::Transaction transaction(db.database());
 
-    for(const CompilationCommand& command : commands) {
-      db.create_command(command.directory, command.executable, command.args, command.output_type);
-    }
+  for(const CompilationCommand& command : commands) {
+    const long long command_id = db.create_command(command.directory, command.executable, command.args);
 
-    transaction.commit();
+    const bfs::path output = expand_path(command.output, command.directory);
+
+    db.create_artifact(output.string(), command.output_type, command_id);
   }
 
-  db.optimize();
+  LOGGER << termcolor::blue << "Status" << termcolor::reset;
+  LOGGER << db.count_artifacts() << " artifacts";
+  for(const auto& type : db.count_artifacts_by_type()) {
+    LOGGER << "\t" << type.second << " " << type.first;
+  }
+
+  if (!dryrun()) {
+    transaction.commit();
+    db.optimize();
+  } else {
+    LOG(always) << "Dry-run, aborting transaction";
+  }
 
   return 0;
 }

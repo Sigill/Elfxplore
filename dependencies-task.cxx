@@ -1,4 +1,4 @@
-#include "dependencies-command.hxx"
+#include "dependencies-task.hxx"
 
 #include <iostream>
 #include <sstream>
@@ -331,7 +331,7 @@ void print(const std::map<long long, ArtifactData>& artifacts, const std::set<De
 
 } // anonymous namespace
 
-boost::program_options::options_description Dependencies_Command::options()
+boost::program_options::options_description Dependencies_Task::options()
 {
   bpo::options_description opt = default_options();
   opt.add_options()
@@ -356,7 +356,7 @@ boost::program_options::options_description Dependencies_Command::options()
   return opt;
 }
 
-int Dependencies_Command::execute(const std::vector<std::string>& args)
+int Dependencies_Task::execute(const std::vector<std::string>& args)
 {
   bpo::positional_options_description p;
   p.add("artifact", -1);

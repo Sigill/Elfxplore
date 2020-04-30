@@ -30,29 +30,29 @@ bool ends_with(const std::string& str, const std::string& suffix) {
   }
 }
 
-std::string expand_path(const std::string& in, const boost::filesystem::path& base) {
+boost::filesystem::path expand_path(const std::string& in, const boost::filesystem::path& base) {
   wordexp_t wx;
   wordexp(in.c_str(), &wx, 0);
   std::string out(wx.we_wordv[0]);
   wordfree(&wx);
 
-  return boost::filesystem::canonical(out, base).string();
+  return boost::filesystem::canonical(out, base);
 }
 
-const char* library_type(const std::string& value) {
+const char* get_library_type(const std::string& value) {
   if (ends_with(value, ".a")) return "static";
   if (std::regex_match(value, so_regex)) return "shared";
   return "library";
 }
 
-const char* output_type(const std::string& value) {
+const char* get_output_type(const std::string& value) {
   if (ends_with(value, ".o")) return "object";
   if (ends_with(value, ".a")) return "static";
   if (std::regex_match(value, so_regex)) return "shared";
   return "executable";
 }
 
-const char* input_type(const std::string& value) {
+const char* get_input_type(const std::string& value) {
   if (ends_with(value, ".o")) return "object";
   if (ends_with(value, ".a")) return "static";
   if (std::regex_match(value, so_regex)) return "shared";

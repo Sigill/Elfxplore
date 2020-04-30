@@ -30,13 +30,14 @@ add_executable(elfxplore
     Database2.cxx
     utils.cxx
     query-utils.cxx
-    command.cxx
-    db-command.cxx
-    command-command.cxx
-    extract-command.cxx
-    dependencies-command.cxx
-    analyse-command.cxx
-    artifacts-command.cxx
+    command-utils.cxx
+    task.cxx
+    db-task.cxx
+    command-task.cxx
+    extract-task.cxx
+    dependencies-task.cxx
+    analyse-task.cxx
+    artifacts-task.cxx
     elfxplore.cxx)
 target_include_directories(elfxplore PRIVATE ${TERMCOLOR_INCLUDE_DIR})
 target_link_libraries(elfxplore Boost::system Boost::program_options Boost::filesystem Threads::Threads SQLite::SQLite3 SQLiteCpp OpenMP::OpenMP_CXX)
