@@ -6,31 +6,36 @@
 
 namespace bpo = boost::program_options;
 
-namespace {
+namespace logger {
 
-std::istream& operator>>(std::istream& in, logger::severity_level& level) {
-  std::string token;
-  in >> token;
-  if (token == "trace")
-    level = logger::trace;
-  else if (token == "debug")
-    level = logger::debug;
-  else if (token == "info")
-    level = logger::info;
-  else if (token == "warning")
-    level = logger::warning;
-  else if (token == "error")
-    level = logger::error;
-  else if (token == "fatal")
-    level = logger::fatal;
-  else throw boost::program_options::invalid_option_value("Invalid severity level");
-  return in;
+void validate(boost::any& v,
+              const std::vector<std::string>& values,
+              ::logger::severity_level* /*target_type*/, int)
+{
+  // Make sure no previous assignment to 'v' was made.
+  bpo::validators::check_first_occurrence(v);
+
+  const std::string& s = bpo::validators::get_single_string(values);
+
+  if (s == "trace")
+    v = boost::any(logger::trace);
+  else if (s == "debug")
+    v = boost::any(logger::debug);
+  else if (s == "info")
+    v = boost::any(logger::info);
+  else if (s == "warning")
+    v = boost::any(logger::warning);
+  else if (s == "error")
+    v = boost::any(logger::error);
+  else if (s == "fatal")
+    v = boost::any(logger::fatal);
+  else
+    throw bpo::validation_error(bpo::validation_error::invalid_option_value);
 }
 
-void set_log_level(const logger::severity_level& level) {
-  logger::_severity_level = level;
-}
 } // anonymous namespace
+
+
 
 Task::Task(const std::vector<std::string>& command)
   : mCommand(command)
@@ -53,7 +58,7 @@ boost::program_options::options_description Task::default_options()
       ("help,h",
        "Produce help message.")
       ("verbose,v",
-       bpo::value<logger::severity_level>()->default_value(logger::fatal, "fatal")->notifier(set_log_level),
+       bpo::value<logger::severity_level>(&::logger::_severity_level)->default_value(logger::fatal, "fatal"),
        "Verbosity level (trace, debug, info, warning, error, fatal).")
       ("dry-run,n",
        bpo::bool_switch(&mDryRun),

@@ -13,6 +13,8 @@ private:
 
 public:
   Task(const std::vector<std::string>& mCommand);
+  virtual ~Task() = default;
+
   void usage(std::ostream& out);
   virtual int execute(const std::vector<std::string>& args) = 0;
 
