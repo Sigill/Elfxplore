@@ -1,13 +1,20 @@
 #include "dependencies-task.hxx"
 
+#include <algorithm>
+#include <array>
 #include <iostream>
 #include <sstream>
+#include <iterator>
 #include <map>
 #include <iomanip>
+#include <tuple>
+#include <utility>
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
 #include <functional>
+
+#include <SQLiteCpp/Statement.h>
 
 #include "Database2.hxx"
 #include "infix_iterator.hxx"
@@ -68,7 +75,7 @@ void get_all_dependencies(Database2& db,
                           const std::vector<std::string>& excluded_types,
                           std::set<Dependency>& dependencies)
 {
-  std::stringstream ss;
+  std::ostringstream ss;
   ss << "select dependee_id, dependency_id from dependencies";
   if (!included_types.empty() || !excluded_types.empty())
     ss << " where";

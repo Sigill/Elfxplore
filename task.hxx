@@ -1,9 +1,10 @@
 #ifndef TASK_HXX
 #define TASK_HXX
 
-#include <vector>
+#include <iosfwd>
 #include <string>
-#include <boost/program_options.hpp>
+#include <vector>
+#include <boost/program_options/options_description.hpp>
 
 class Task
 {

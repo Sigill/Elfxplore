@@ -1,10 +1,10 @@
 #ifndef QUERYUTILS_HXX
 #define QUERYUTILS_HXX
 
+#include <iterator>
+#include <ostream>
 #include <string>
 #include <vector>
-#include <iterator>
-#include <algorithm>
 
 struct quoted_string_literal_manip
 {

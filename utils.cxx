@@ -1,11 +1,13 @@
 #include "utils.hxx"
 
-#include <regex>
 #include <algorithm>
 #include <cctype>
+#include <sstream>
+#include <regex>
 
 #include <wordexp.h>
 
+#include "Database2.hxx"
 #include "query-utils.hxx"
 
 namespace {
@@ -99,7 +101,7 @@ std::map<long long, std::string> get_symbol_hnames(Database2& db, const std::vec
 {
   std::map<long long, std::string> names;
 
-  std::stringstream ss;
+  std::ostringstream ss;
   ss << R"(
 select id, name, dname
 from symbols

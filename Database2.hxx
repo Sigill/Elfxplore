@@ -1,16 +1,19 @@
 #ifndef DATABASE2_HXX
 #define DATABASE2_HXX
 
-#include "SymbolReference.hxx"
-#include "ArtifactSymbols.hxx"
-#include <SQLiteCpp/SQLiteCpp.h>
-
 #include <vector>
 #include <map>
 #include <string>
-#include <utility>
 #include <functional>
-#include <boost/noncopyable.hpp>
+
+#include <boost/core/noncopyable.hpp>
+
+#include <SQLiteCpp/Database.h>
+#include <SQLiteCpp/Statement.h>
+
+#include "SymbolReferenceSet.hxx"
+
+struct ArtifactSymbols;
 
 template <typename T>
 class Lazy : boost::noncopyable {

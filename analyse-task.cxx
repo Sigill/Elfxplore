@@ -5,6 +5,8 @@
 #include <sstream>
 #include <algorithm>
 #include <chrono>
+#include <future>
+#include <map>
 
 #include <boost/program_options.hpp>
 #include <boost/process.hpp>
@@ -30,15 +32,21 @@ enum class useless_dependencies_analysis_modes {
   ldd
 };
 
-std::istream& operator>>(std::istream& in, useless_dependencies_analysis_modes & mode) {
-  std::string token;
-  in >> token;
-  if (token == "symbols")
-    mode = useless_dependencies_analysis_modes::symbols;
-  else if (token == "ldd")
-    mode = useless_dependencies_analysis_modes::ldd;
-  else throw boost::program_options::invalid_option_value("Invalid mode");
-  return in;
+void validate(boost::any& v,
+              const std::vector<std::string>& values,
+              useless_dependencies_analysis_modes* /*target_type*/, int)
+{
+  // Make sure no previous assignment to 'v' was made.
+  bpo::validators::check_first_occurrence(v);
+
+  const std::string& s = bpo::validators::get_single_string(values);
+
+  if (s == "symbols")
+    v = useless_dependencies_analysis_modes::symbols;
+  else if (s == "ldd")
+    v = useless_dependencies_analysis_modes::ldd;
+  else
+    throw bpo::validation_error(bpo::validation_error::invalid_option_value);
 }
 
 void analyse_duplicated_symbols(Database2& db,

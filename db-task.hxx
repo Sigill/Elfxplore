@@ -1,9 +1,6 @@
 #ifndef DBTASK_HXX
 #define DBTASK_HXX
 
-#include <vector>
-#include <string>
-
 #include "task.hxx"
 
 class DB_Task : public Task {

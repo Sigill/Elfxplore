@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 
-#include "SymbolReference.hxx"
 #include "SymbolReferenceSet.hxx"
 
 struct ProcessResult {

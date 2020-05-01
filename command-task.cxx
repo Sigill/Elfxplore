@@ -1,14 +1,20 @@
 #include "command-task.hxx"
 
+#include <fstream>
 #include <iostream>
-#include <boost/tokenizer.hpp>
+#include <utility>
+
+#include <boost/filesystem/path.hpp>
+#include <boost/program_options.hpp>
+
 #include <termcolor/termcolor.hpp>
+
+#include <SQLiteCpp/Transaction.h>
 
 #include "Database2.hxx"
 #include "utils.hxx"
 #include "logger.hxx"
 #include "command-utils.hxx"
-
 namespace bpo = boost::program_options;
 namespace bfs = boost::filesystem;
 

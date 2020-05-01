@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cctype>
 
+#include "ArtifactSymbols.hxx"
+#include "SymbolReference.hxx"
 #include "query-utils.hxx"
 
 namespace {

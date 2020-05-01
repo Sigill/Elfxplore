@@ -2,6 +2,7 @@
 #define LOGGER_HXX
 
 #include <iostream>
+#include <utility>
 
 namespace logger {
 

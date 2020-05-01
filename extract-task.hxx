@@ -1,9 +1,6 @@
 #ifndef EXTRACT_TASK_HXX
 #define EXTRACT_TASK_HXX
 
-#include <vector>
-#include <string>
-
 #include "task.hxx"
 
 class Extract_Task : public Task {

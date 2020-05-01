@@ -1,11 +1,12 @@
 #include "nm.hxx"
 
+
 #include <future>
 #include <sstream>
-#include <string.h> // memrchr
+#include <string.h>
+#include <thread>
 
 #include <boost/process.hpp>
-#include <boost/asio.hpp>
 
 #include "utils.hxx"
 

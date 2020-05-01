@@ -1,9 +1,6 @@
 #ifndef DEPENDENCIESCOMMAND_HXX
 #define DEPENDENCIESCOMMAND_HXX
 
-#include <vector>
-#include <string>
-
 #include "task.hxx"
 
 class Dependencies_Task : public Task {

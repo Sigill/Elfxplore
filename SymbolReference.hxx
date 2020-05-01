@@ -2,7 +2,7 @@
 #define SYMBOL_REFERENCE_HXX
 
 #include <string>
-#include <set>
+#include <utility>
 
 class SymbolReference
 {

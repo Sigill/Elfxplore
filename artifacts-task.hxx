@@ -1,9 +1,6 @@
 #ifndef ARTIFACTSCOMMAND_HXX
 #define ARTIFACTSCOMMAND_HXX
 
-#include <vector>
-#include <string>
-
 #include "task.hxx"
 
 class Artifacts_Task : public Task

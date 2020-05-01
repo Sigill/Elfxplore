@@ -2,6 +2,8 @@
 
 #include <iostream>
 
+#include <boost/program_options.hpp>
+
 #include "logger.hxx"
 
 namespace bpo = boost::program_options;

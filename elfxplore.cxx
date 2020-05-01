@@ -1,10 +1,11 @@
+#include <algorithm>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 #include <memory>
 #include <functional>
 
-#include "task.hxx"
 #include "command-task.hxx"
 #include "db-task.hxx"
 #include "extract-task.hxx"

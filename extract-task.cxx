@@ -2,14 +2,18 @@
 
 #include <iostream>
 #include <algorithm>
-#include <vector>
+#include <functional>
 
 #include <boost/program_options.hpp>
-#include <boost/filesystem.hpp>
+#include <boost/filesystem/path.hpp>
+#include <boost/filesystem/operations.hpp>
 #include <boost/process.hpp>
 
 #include <termcolor/termcolor.hpp>
 
+#include <SQLiteCpp/Transaction.h>
+
+#include "ArtifactSymbols.hxx"
 #include "Database2.hxx"
 #include "utils.hxx"
 #include "command-utils.hxx"

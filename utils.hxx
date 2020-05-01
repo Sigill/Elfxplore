@@ -4,9 +4,10 @@
 #include <string>
 #include <vector>
 #include <map>
-#include <boost/filesystem.hpp>
+#include <boost/filesystem/path.hpp>
+#include <boost/filesystem/operations.hpp>
 
-#include "Database2.hxx"
+class Database2;
 
 bool starts_with(const std::string& str, const std::string& prefix);
 bool ends_with(const std::string& str, const std::string& suffix);

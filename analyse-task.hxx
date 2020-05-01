@@ -1,9 +1,6 @@
 #ifndef ANALYSESYMBOLSTASK_HXX
 #define ANALYSESYMBOLSTASK_HXX
 
-#include <string>
-#include <vector>
-
 #include "task.hxx"
 
 class Analyse_Task : public Task {
