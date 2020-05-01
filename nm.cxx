@@ -1,9 +1,11 @@
 #include "nm.hxx"
 
-#include <boost/process.hpp>
-//#include <boost/asio.hpp>
-//#include <future>
+#include <future>
+#include <sstream>
 #include <string.h> // memrchr
+
+#include <boost/process.hpp>
+#include <boost/asio.hpp>
 
 #include "utils.hxx"
 
