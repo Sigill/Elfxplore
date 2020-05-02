@@ -32,7 +32,7 @@ void validate(boost::any& v,
   else if (s == "fatal")
     v = boost::any(logger::fatal);
   else
-    throw bpo::validation_error(bpo::validation_error::invalid_option_value);
+    throw bpo::invalid_option_value(s);
 }
 
 } // anonymous namespace

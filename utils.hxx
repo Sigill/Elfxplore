@@ -40,4 +40,8 @@ std::map<long long, std::string> get_symbol_hnames(Database2& db, const std::vec
 
 std::vector<std::string> split(std::string str, const char delim);
 
+void wc(std::istream& in, long long& c, long long& l);
+
+void wc(const std::string& file, long long& c, long long& l);
+
 #endif // UTILS_HXX

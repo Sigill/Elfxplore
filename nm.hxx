@@ -5,12 +5,7 @@
 #include <vector>
 
 #include "SymbolReferenceSet.hxx"
-
-struct ProcessResult {
-  std::string command;
-  std::string out, err;
-  char code = -1;
-};
+#include "process-utils.hxx"
 
 bool failed(const ProcessResult& process);
 

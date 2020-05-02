@@ -31,6 +31,7 @@ add_executable(elfxplore
     utils.cxx
     query-utils.cxx
     command-utils.cxx
+    progressbar.cxx
     task.cxx
     db-task.cxx
     command-task.cxx

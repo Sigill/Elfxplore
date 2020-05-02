@@ -7,6 +7,8 @@
 
 #include <boost/filesystem/path.hpp>
 
+bool is_cc(const std::string& command);
+
 class CompilationCommand {
 public:
   long long id = -1;
@@ -37,5 +39,9 @@ public:
 CompilationCommandDependencies parse_dependencies(const boost::filesystem::path& directory,
                                                   const std::string& executable,
                                                   const std::string& args, const std::vector<boost::filesystem::path>& default_library_directories);
+
+std::string redirect_gcc_output(const CompilationCommand& command, const std::string& to = {});
+
+std::string redirect_ar_output(const CompilationCommand& command, const std::string& to = {});
 
 #endif // COMMANDUTILS_HXX

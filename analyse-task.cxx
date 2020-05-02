@@ -11,6 +11,7 @@
 #include <boost/program_options.hpp>
 #include <boost/process.hpp>
 #include <boost/asio.hpp>
+#include <boost/filesystem.hpp>
 
 #include <termcolor/termcolor.hpp>
 
@@ -21,8 +22,13 @@
 #include "utils.hxx"
 #include "command-utils.hxx"
 #include "logger.hxx"
+#include "progressbar.hxx"
+#include "csvprinter.h"
+#include "infix_iterator.hxx"
+#include "process-utils.hxx"
 
 namespace bpo = boost::program_options;
+namespace bfs = boost::filesystem;
 namespace bp = boost::process;
 
 namespace {
@@ -46,7 +52,60 @@ void validate(boost::any& v,
   else if (s == "ldd")
     v = useless_dependencies_analysis_modes::ldd;
   else
-    throw bpo::validation_error(bpo::validation_error::invalid_option_value);
+    throw bpo::invalid_option_value(s);
+}
+
+enum class command_analysis_mode {
+  source_count,
+  preprocessor_count,
+  preprocessor_time,
+  compile_time,
+  link_time,
+  all
+};
+
+void validate(boost::any& v,
+              const std::vector<std::string>& values,
+              command_analysis_mode* /*target_type*/, int)
+{
+  // Make sure no previous assignment to 'v' was made.
+  bpo::validators::check_first_occurrence(v);
+
+  const std::string& s = bpo::validators::get_single_string(values);
+
+  if (s == "source-count")
+    v = command_analysis_mode::source_count;
+  else if (s == "preprocessor-count")
+    v = command_analysis_mode::preprocessor_count;
+  else if (s == "preprocessor-time")
+    v = command_analysis_mode::preprocessor_time;
+  else if (s == "compile-time")
+    v = command_analysis_mode::compile_time;
+  else if (s == "link-time")
+    v = command_analysis_mode::link_time;
+  else if (s == "all")
+    v = command_analysis_mode::all;
+  else
+    throw bpo::invalid_option_value(s);
+}
+
+std::vector<command_analysis_mode> expand_modes(const std::vector<command_analysis_mode>& in) {
+  std::vector<command_analysis_mode> out;
+  for(const command_analysis_mode mode : in) {
+    if (mode == command_analysis_mode::all) {
+      out.insert(out.end(), {command_analysis_mode::source_count,
+                             command_analysis_mode::preprocessor_count,
+                             command_analysis_mode::preprocessor_time,
+                             command_analysis_mode::compile_time,
+                             command_analysis_mode::link_time});
+    } else {
+      out.push_back(mode);
+    }
+  }
+
+  std::sort(out.begin(), out.end());
+
+  return out;
 }
 
 void analyse_duplicated_symbols(Database2& db,
@@ -403,12 +462,23 @@ void analyse_useless_dependencies_ldd(Database2& db, const std::vector<long long
   }
 }
 
+struct CommandStats {
+  const CompilationCommand* command = nullptr;
+  std::vector<std::string> inputs;
+
+  long long source_chars = -1;
+  long long source_lines = -1;
+  long long preprocessor_chars = -1;
+  long long preprocessor_lines = -1;
+  double preprocessor_time = -1.;
+  double command_time = -1.;
+};
+
 std::vector<CompilationCommand> get_object_commands(Database2& db)
 {
   std::vector<CompilationCommand> commands;
 
-  std::stringstream ss;
-  ss << R"(
+  const char* q = R"(
 select commands.id, commands.directory, commands.executable, commands.args, artifacts.name
 from commands
 inner join artifacts
@@ -416,7 +486,7 @@ on artifacts.generating_command_id = commands.id
 where artifacts.type = "object"
 )";
 
-  SQLite::Statement stm = db.statement(ss.str());
+  SQLite::Statement stm = db.statement(q);
 
   while(stm.executeStep()) {
     commands.emplace_back(CompilationCommand{stm.getColumn(0).getInt64(),
@@ -430,44 +500,270 @@ where artifacts.type = "object"
   return commands;
 }
 
-double time_preprocessor(const CompilationCommand& command) {
-  const std::vector<std::string> argv = bpo::split_unix(command.args);
+std::vector<CompilationCommand> get_link_commands(Database2& db)
+{
+  std::vector<CompilationCommand> commands;
 
-  std::ostringstream ss;
-  ss << command.executable;
+  const char* q = R"(
+select commands.id, commands.directory, commands.executable, commands.args, artifacts.name
+from commands
+inner join artifacts
+on artifacts.generating_command_id = commands.id
+where artifacts.type in ("static", "shared", "executable")
+)";
 
-  for(size_t i = 0; i < argv.size(); ++i) {
-    const std::string& arg = argv[i];
+  SQLite::Statement stm = db.statement(q);
 
-    if (starts_with(arg, "-o")) {
-      ss << " -o /dev/null";
-
-      if (arg.size() == 2) {
-        ++i;
-      }
-    } else {
-      ss << " " << arg;
-    }
+  while(stm.executeStep()) {
+    commands.emplace_back(CompilationCommand{stm.getColumn(0).getInt64(),
+                                             stm.getColumn(1).getString(),
+                                             stm.getColumn(2).getString(),
+                                             stm.getColumn(3).getString(),
+                                             stm.getColumn(4).getString(),
+                                             {}});
   }
 
-  ss << " -E";
+  return commands;
+}
+
+ProcessResult time_command(const std::string& cmd, const std::string& directory, double& duration) {
+  ProcessResult res;
+  res.command = cmd;
 
   boost::asio::io_service ios;
   std::future<std::string> err_;
 
   const auto start = std::chrono::high_resolution_clock::now();
 
-  bp::child c(ss.str(),
+  bp::child p(cmd,
+              bp::start_dir = directory,
               bp::std_in.close(),
               bp::std_out > bp::null,
               bp::std_err > err_,
               ios);
 
   ios.run();
-  c.wait();
+  p.wait();
 
   const std::chrono::duration<double> elapsed = std::chrono::high_resolution_clock::now() - start;
-  return elapsed.count();
+  duration = elapsed.count();
+
+  res.code = p.exit_code();
+  res.err = err_.get();
+
+  return res;
+}
+
+ProcessResult wc_preprocessor(const CompilationCommand& command, long long& c, long long& l) {
+  ProcessResult res;
+  res.command = redirect_gcc_output(command) + " -E";
+
+  bp::ipstream out_stream, err_stream;
+
+  bp::child p(res.command,
+              bp::start_dir = command.directory,
+              bp::std_in.close(),
+              bp::std_out > out_stream,
+              bp::std_err > err_stream
+              );
+
+  std::thread out_thread([&out_stream, &c, &l](){ wc(out_stream, c, l); });
+  std::future<std::string> err_f = std::async(std::launch::async, [&err_stream](){
+    std::ostringstream ss;
+    ss << err_stream.rdbuf();
+    return ss.str();
+  });
+  out_thread.join();
+
+  p.wait();
+
+  res.code = p.exit_code();
+  res.err = err_f.get();
+
+  return res;
+}
+
+ProcessResult time_preprocessor(const CompilationCommand& command, double& duration) {
+  const std::string cmd = redirect_gcc_output(command, "/dev/null") + " -E";
+  return time_command(cmd, command.directory, duration);
+}
+
+ProcessResult time_compile(const CompilationCommand& command, double& duration) {
+  const std::string cmd = redirect_gcc_output(command, "/dev/null");
+  return time_command(cmd, command.directory, duration);
+}
+
+class TempFile {
+private:
+  bfs::path mPath;
+public:
+  explicit TempFile(const bfs::path& p) : mPath(p) {}
+  ~TempFile() { bfs::remove(mPath); }
+  const bfs::path& path() const { return mPath; }
+};
+
+ProcessResult time_link(const CompilationCommand& command, double& duration) {
+  if (is_cc(command.executable)) {
+    const std::string cmd = redirect_gcc_output(command, "/dev/null");
+    return time_command(cmd, command.directory, duration);
+  } else {
+    const TempFile a = TempFile(bfs::unique_path(bfs::temp_directory_path() / "%%%%-%%%%-%%%%-%%%%.a"));
+    const std::string cmd = redirect_ar_output(command, a.path().string());
+    return time_command(cmd, command.directory, duration);
+  }
+}
+
+void print(csv::printer& csv, const CommandStats& stats) {
+
+  std::ostringstream ss;
+  std::copy(stats.inputs.cbegin(), stats.inputs.cend(), infix_ostream_iterator<std::string>(ss, ";"));
+  csv << ss.str();
+
+  csv << stats.command->output;
+
+  if (stats.source_chars >= 0) csv << stats.source_chars;
+  if (stats.source_lines >= 0) csv << stats.source_lines;
+  if (stats.preprocessor_chars >= 0) csv << stats.preprocessor_chars;
+  if (stats.preprocessor_lines >= 0) csv << stats.preprocessor_lines;
+  if (stats.command_time >= 0) csv << stats.command_time;
+
+  csv << stats.command->directory << (stats.command->executable + " " + stats.command->args);
+
+  csv << csv::endrow;
+}
+
+void analyse_commands(Database2& db, const std::vector<command_analysis_mode>& modes, const unsigned int num_threads, std::ostream& out) {
+  const bool analyse_source = std::find(modes.begin(), modes.end(), command_analysis_mode::source_count) != modes.end();
+  const bool analyse_preprocessor_count = std::find(modes.begin(), modes.end(), command_analysis_mode::preprocessor_count) != modes.end();
+  const bool analyse_preprocessor_time = std::find(modes.begin(), modes.end(), command_analysis_mode::preprocessor_time) != modes.end();
+  const bool analyse_compile_time = std::find(modes.begin(), modes.end(), command_analysis_mode::compile_time) != modes.end();
+  const bool analyse_link_time = std::find(modes.begin(), modes.end(), command_analysis_mode::link_time) != modes.end();
+
+  csv::printer csv = csv::printer(out);
+
+  csv << "input" << "output";
+
+  if (analyse_source)
+    csv << "source-chars" << "source-lines";
+
+  if (analyse_preprocessor_count)
+    csv << "preprocessor-chars" << "preprocessor-lines";
+
+  if (analyse_preprocessor_time)
+    csv << "preprocessor-time";
+
+  if (analyse_compile_time || analyse_link_time)
+    csv << "command-time";
+
+  csv << "directory" << "command";
+
+  csv << csv::endrow;
+
+  if (analyse_source || analyse_preprocessor_count || analyse_preprocessor_time || analyse_compile_time) {
+    LOG(always) << "Analysing compilation commands";
+
+    auto commands = get_object_commands(db);
+
+    ProgressBar progress;
+    progress.start(commands.size());
+
+#pragma omp parallel for num_threads(num_threads) schedule(guided)
+    for(size_t i = 0; i < commands.size(); ++i) {
+      const CompilationCommand& command = commands[i];
+
+      CommandStats stats;
+      stats.command = &command;
+
+#pragma omp critical
+      stats.inputs = db.get_sources(command.id);
+
+      if (analyse_source) {
+        stats.source_chars = stats.source_lines = 0;
+        for(const std::string& source : stats.inputs) {
+          wc(source, stats.source_chars, stats.source_lines);
+        }
+      }
+
+      if (analyse_preprocessor_count) {
+        stats.preprocessor_chars = stats.preprocessor_lines = 0;
+        const ProcessResult res = wc_preprocessor(command, stats.preprocessor_chars, stats.preprocessor_lines);
+        if (res.code != 0) {
+#pragma omp critical
+          {
+            LOG(always) << res.command;
+            LOG(always) << (int)res.code;
+            LOG(always) << res.err;
+          }
+        }
+      }
+
+      if (analyse_preprocessor_time) {
+        const ProcessResult res = time_preprocessor(command, stats.preprocessor_time);
+        if (res.code != 0) {
+#pragma omp critical
+          {
+            LOG(always) << res.command;
+            LOG(always) << (int)res.code;
+            LOG(always) << res.err;
+          }
+        }
+      }
+
+      if (analyse_compile_time) {
+        const ProcessResult res = time_compile(command, stats.command_time);
+        if (res.code != 0) {
+#pragma omp critical
+          {
+            LOG(always) << res.command;
+            LOG(always) << (int)res.code;
+            LOG(always) << res.err;
+          }
+        }
+      }
+
+#pragma omp critical
+      {
+        print(csv, stats);
+        ++progress;
+      }
+    }
+  }
+
+  if (analyse_link_time) {
+    LOG(always) << "Analysing link commands";
+
+    auto commands = get_link_commands(db);
+
+    ProgressBar progress;
+    progress.start(commands.size());
+
+#pragma omp parallel for num_threads(num_threads) schedule(guided)
+    for(size_t i = 0; i < commands.size(); ++i) {
+      const CompilationCommand& command = commands[i];
+
+      CommandStats stats = {};
+      stats.command = &command;
+      const ProcessResult res = time_link(command, stats.command_time);
+      if (res.code != 0) {
+#pragma omp critical
+        {
+          LOG(always) << res.command;
+          LOG(always) << (int)res.code;
+          LOG(always) << res.err;
+        }
+      }
+
+#pragma omp critical
+      {
+        const long long artifact_id = db.artifact_id_by_command(command.id);
+        for(const long long dependency_id : db.dependencies(artifact_id)) {
+          stats.inputs.emplace_back(db.artifact_name_by_id(dependency_id));
+        }
+        print(csv, stats);
+        ++progress;
+      }
+    }
+  }
 }
 
 } // anonymous namespace
@@ -491,6 +787,9 @@ boost::program_options::options_description Analyse_Task::options()
       ("artifact",
        bpo::value<std::vector<std::string>>()->multitoken()->default_value({}, ""),
        "Artifact to export.")
+      (",j",
+       bpo::value<unsigned int>(&mNumThreads)->default_value(1),
+       "Number of parallel threads ro run.")
       ("duplicated-symbols", "Analyse duplicated symbols.")
       ("undefined-symbols", "Analyse undefined symbols.")
       ("useless-dependencies",
@@ -499,7 +798,9 @@ boost::program_options::options_description Analyse_Task::options()
        "There are two analysis mode:\n"
        "- symbols: identify symbols not exported by dependencies.\n"
        "- ldd: equivalent to ldd -u -r.")
-      ("preproc-time", "Time spent preprocessing files.")
+      ("command",
+       bpo::value<std::vector<command_analysis_mode>>()->implicit_value({command_analysis_mode::all}, "all"),
+       "Analyse compilation commands.")
       ;
 
   return opt;
@@ -528,7 +829,7 @@ int Analyse_Task::execute(const std::vector<std::string>& args)
   if (vm.count("duplicated-symbols")
       + vm.count("undefined-symbols")
       + vm.count("useless-dependencies")
-      + vm.count("preproc-time") != 1) {
+      + vm.count("command") != 1) {
     std::cerr << "Invalid analysis type" << std::endl;
     return -1;
   }
@@ -551,26 +852,11 @@ int Analyse_Task::execute(const std::vector<std::string>& args)
     } else if (mode == useless_dependencies_analysis_modes::ldd) {
       analyse_useless_dependencies_ldd(db, artifacts);
     }
-  } else if (vm.count("preproc-time")) {
-    auto commands = get_object_commands(db);
-    std::vector<std::pair<long long, double>> measures; measures.reserve(commands.size());
-
-    for(size_t i = 0; i < commands.size(); ++i) {
-      const CompilationCommand& command = commands[i];
-      measures.emplace_back(command.id, time_preprocessor(command));
-
-      std::cout << (i+1) << "/" << commands.size() << "\r";
-      std::cout.flush();
-    }
-    std::cout << std::endl;
-
-    std::sort(measures.begin(), measures.end(),
-              [](const std::pair<long long, double>& a, const std::pair<long long, double>& b){ return a.second > b.second; });
-    for(const std::pair<long long, double>& m: measures) {
-      const auto sources = db.get_sources(m.first);
-      std::cout << std::right << std::fixed << std::setw(8) << std::setprecision(2) << m.second << " s "
-                << sources.front() << std::endl;
-    }
+  } else if (vm.count("command")) {
+    const auto modes = expand_modes(vm["command"].as<std::vector<command_analysis_mode>>());
+    std::ostringstream ss;
+    analyse_commands(db, modes, mNumThreads, ss);
+    std::cout << ss.str() << std::endl;
   }
 
   return 0;

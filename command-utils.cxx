@@ -57,11 +57,14 @@ void parse_command(const std::string& line, CompilationCommand& command)
   typename Tokenizer::iterator token_it(tok.begin()), token_end(tok.end());
 
   consume_token(token_it, token_end, command.directory);
+
+  // Somehow, it.base() is the start of the next token.
+  // Compute args right now.
+  command.args = std::string(token_it.base(), line.end());
+
   consume_token(token_it, token_end, command.executable);
 
   if (token_it != token_end) {
-    command.args = std::string(token_it.base(), line.end());
-
     if (is_cc(command.executable)) {
       parse_cc_command(token_it, token_end, command);
     } else if (command.executable == "ar") {
@@ -238,4 +241,50 @@ CompilationCommandDependencies parse_dependencies(const boost::filesystem::path&
   }
 
   return dependencies;
+}
+
+std::string redirect_gcc_output(const CompilationCommand& command, const std::string& to) {
+  const std::vector<std::string> argv = bpo::split_unix(command.args);
+
+  std::ostringstream ss;
+  ss << command.executable;
+
+  for(size_t i = 0; i < argv.size(); ++i) {
+    const std::string& arg = argv[i];
+
+    if (starts_with(arg, "-o")) {
+      if (!to.empty())
+        ss << " -o " << to;
+
+      if (arg.size() == 2) {
+        ++i;
+      }
+    } else {
+      ss << " " << arg;
+    }
+  }
+
+  return ss.str();
+}
+
+std::string redirect_ar_output(const CompilationCommand& command, const std::string& to) {
+  const std::vector<std::string> argv = bpo::split_unix(command.args);
+
+  std::ostringstream ss;
+  ss << command.executable;
+
+  bool output_found = false;
+
+  for(size_t i = 0; i < argv.size(); ++i) {
+    const std::string& arg = argv[i];
+
+    if (ends_with(arg, ".a") && !output_found) {
+        ss << " " << to;
+        output_found = true;
+    }
+
+    ss << " " << arg;
+  }
+
+  return ss.str();
 }

@@ -4,6 +4,8 @@
 #include "task.hxx"
 
 class Analyse_Task : public Task {
+private:
+  unsigned int mNumThreads = 1;
 public:
   using Task::Task;
   boost::program_options::options_description options() override;

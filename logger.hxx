@@ -32,8 +32,6 @@ struct EndlStream {
   std::ostream& os;
 };
 
-} // namespace logger
-
 template <class T>
 inline ::logger::EndlStream::EndlStream_ operator<<(::logger::EndlStream::EndlStream_&& a, const T& t) {
   a.os << t;
@@ -70,7 +68,9 @@ inline bool log_enabled(const ::logger::severity_level lvl) {
   return ::logger::_severity_level <= lvl;
 }
 
-#define LOG_ENABLED(lvl) log_enabled(::logger::severity_level::lvl)
+} // namespace logger
+
+#define LOG_ENABLED(lvl) ::logger::log_enabled(::logger::severity_level::lvl)
 
 #define SLOGGER std::cout
 
@@ -80,16 +80,8 @@ inline bool log_enabled(const ::logger::severity_level lvl) {
   for(bool live = ::logger::_severity_level <= ::logger::lvl; live; live = false) \
     LOGGER
 
-#define LOG_(lvl) \
-  if (::logger::_severity_level > ::logger::lvl) {} \
-  else LOGGER
-
 #define LOG2(cond, lvl1, lvl2) \
   for(bool live = ::logger::_severity_level <= ((cond) ? ::logger::lvl1 : ::logger::lvl2); live; live = false) \
     LOGGER
-
-#define LOG2_(cond, lvl1, lvl2) \
-  if (::logger::_severity_level > (cond ? ::logger::lvl1 : ::logger::lvl2)) {} \
-  else LOGGER
 
 #endif // LOGGER_HXX

@@ -4,6 +4,7 @@
 #include <cctype>
 #include <sstream>
 #include <regex>
+#include <fstream>
 
 #include <wordexp.h>
 
@@ -129,4 +130,17 @@ std::vector<std::string> split(std::string str, const char delim) {
   }
 
   return tokens;
+}
+
+void wc(std::istream& in, long long& c, long long& l) {
+  for(std::string line; std::getline(in, line); ) {
+    c += line.size();
+    ++l;
+  }
+}
+
+void wc(const std::string& file, long long& c, long long& l) {
+  std::ifstream in(file);
+
+  wc(in, c, l);
 }
