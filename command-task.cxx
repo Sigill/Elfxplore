@@ -33,7 +33,7 @@ void process_command(const std::string& line, std::vector<CompilationCommand>& c
   }
 
   if (command.output.empty()) {
-    LOG(always) << termcolor::red << "Error: no output indentified" << termcolor::reset;
+    LOG(always) << termcolor::red << "Error: no output identified" << termcolor::reset;
     return;
   }
 

@@ -1,44 +1,36 @@
 #include "command-utils.hxx"
 
-#include <stdexcept>
+#include <sstream>
+#include <algorithm>
 
 #include <boost/filesystem/operations.hpp>
-#include <boost/tokenizer.hpp>
-#include <boost/program_options.hpp>
+#include <shellwords/shellwords.hxx>
 
 #include "utils.hxx"
 
 namespace bfs = boost::filesystem;
-namespace bpo = boost::program_options;
-
-using Tokenizer = boost::tokenizer<boost::escaped_list_separator<char>, typename std::string::const_iterator, std::string>;
 
 namespace {
 
-void consume_token(Tokenizer::iterator& it, const Tokenizer::iterator& end, std::string& out) {
-  if (it != end) {
-    out = *it;
-    ++it;
-  }
-}
-
-void parse_cc_command(Tokenizer::iterator& it, const Tokenizer::iterator& end, CompilationCommand& command) {
-  for (; it != end; ++it) {
-    if (starts_with(*it, "-o")) {
-      if (it->size() > 2) {
-        command.output = it->substr(2);
+void parse_cc_args(shellwords::shell_splitter& splitter, CompilationCommand& command) {
+  while(splitter.read_next()) {
+    const std::string& arg = splitter.arg();
+    if (starts_with(arg, "-o")) {
+      if (arg.size() > 2) {
+        command.output = arg.substr(2);
       } else {
-        if (++it != end)
-          command.output = *it;
+        if (splitter.read_next())
+          command.output = splitter.arg();
       }
     }
   }
 }
 
-void parse_ar_command(Tokenizer::iterator& it, const Tokenizer::iterator& end, CompilationCommand& command) {
-  for (; it != end; ++it) {
-    if (ends_with(*it, ".a") && command.output.empty())
-      command.output = *it;
+void parse_ar_args(shellwords::shell_splitter& splitter, CompilationCommand& command) {
+  while(splitter.read_next()) {
+    const std::string& arg = splitter.arg();
+    if (ends_with(arg, ".a") && command.output.empty())
+      command.output = arg;
   }
 }
 
@@ -52,28 +44,26 @@ bool is_cc(const std::string& command) {
 
 void parse_command(const std::string& line, CompilationCommand& command)
 {
-  Tokenizer tok(line.begin(), line.end(), boost::escaped_list_separator<char>("\\", " \t", "'\""));
+  shellwords::shell_splitter splitter(line.begin(), line.end());
 
-  typename Tokenizer::iterator token_it(tok.begin()), token_end(tok.end());
-
-  consume_token(token_it, token_end, command.directory);
-
-  // Somehow, it.base() is the start of the next token.
-  // Compute args right now.
-  command.args = std::string(token_it.base(), line.end());
-
-  consume_token(token_it, token_end, command.executable);
-
-  if (token_it != token_end) {
-    if (is_cc(command.executable)) {
-      parse_cc_command(token_it, token_end, command);
-    } else if (command.executable == "ar") {
-      parse_ar_command(token_it, token_end, command);
-    }
-
-    if (!command.output.empty())
-      command.output_type = get_output_type(command.output);
+  if (splitter.read_next()) {
+    command.directory = splitter.arg();
   }
+
+  if (splitter.read_next()) {
+    command.executable = splitter.arg();
+  }
+
+  command.args = std::string(splitter.suffix(), line.end());
+
+  if (is_cc(command.executable)) {
+    parse_cc_args(splitter, command);
+  } else if (command.executable == "ar") {
+    parse_ar_args(splitter, command);
+  }
+
+  if (!command.output.empty())
+    command.output_type = get_output_type(command.output);
 }
 
 bool CompilationCommand::is_complete() const
@@ -228,7 +218,7 @@ CompilationCommandDependencies parse_dependencies(const boost::filesystem::path&
                                                   const std::string& args,
                                                   const std::vector<bfs::path>& default_library_directories)
 {
-  const std::vector<std::string> argv = bpo::split_unix(args);
+  const std::vector<std::string> argv = shellwords::shellsplit(args);
 
   CompilationCommandDependencies dependencies;
 
@@ -244,7 +234,7 @@ CompilationCommandDependencies parse_dependencies(const boost::filesystem::path&
 }
 
 std::string redirect_gcc_output(const CompilationCommand& command, const std::string& to) {
-  const std::vector<std::string> argv = bpo::split_unix(command.args);
+  const std::vector<std::string> argv = shellwords::shellsplit(command.args);
 
   std::ostringstream ss;
   ss << command.executable;
@@ -268,7 +258,7 @@ std::string redirect_gcc_output(const CompilationCommand& command, const std::st
 }
 
 std::string redirect_ar_output(const CompilationCommand& command, const std::string& to) {
-  const std::vector<std::string> argv = bpo::split_unix(command.args);
+  const std::vector<std::string> argv = shellwords::shellsplit(command.args);
 
   std::ostringstream ss;
   ss << command.executable;
