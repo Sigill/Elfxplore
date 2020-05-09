@@ -26,6 +26,7 @@
 #include "csvprinter.h"
 #include "infix_iterator.hxx"
 #include "process-utils.hxx"
+#include "linemarkers.hxx"
 
 namespace bpo = boost::program_options;
 namespace bfs = boost::filesystem;
@@ -555,7 +556,7 @@ ProcessResult time_command(const std::string& cmd, const std::string& directory,
   return res;
 }
 
-ProcessResult wc_preprocessor(const CompilationCommand& command, long long& c, long long& l) {
+ProcessResult wc_preprocessor(const CompilationCommand& command, size_t& c, size_t& l) {
   ProcessResult res;
   res.command = redirect_gcc_output(command) + " -E";
 
@@ -594,21 +595,12 @@ ProcessResult time_compile(const CompilationCommand& command, double& duration) 
   return time_command(cmd, command.directory, duration);
 }
 
-class TempFile {
-private:
-  bfs::path mPath;
-public:
-  explicit TempFile(const bfs::path& p) : mPath(p) {}
-  ~TempFile() { bfs::remove(mPath); }
-  const bfs::path& path() const { return mPath; }
-};
-
 ProcessResult time_link(const CompilationCommand& command, double& duration) {
   if (is_cc(command.executable)) {
     const std::string cmd = redirect_gcc_output(command, "/dev/null");
     return time_command(cmd, command.directory, duration);
   } else {
-    const TempFile a = TempFile(bfs::unique_path(bfs::temp_directory_path() / "%%%%-%%%%-%%%%-%%%%.a"));
+    const TempFileGuard a = TempFileGuard(bfs::unique_path(bfs::temp_directory_path() / "%%%%-%%%%-%%%%-%%%%.a"));
     const std::string cmd = redirect_ar_output(command, a.path().string());
     return time_command(cmd, command.directory, duration);
   }
@@ -679,7 +671,7 @@ void analyse_commands(Database2& db, const std::vector<command_analysis_mode>& m
     for(size_t i = 0; i < commands.size(); ++i) {
       const CompilationCommand& command = commands[i];
 
-      Measure<long long> source_chars, source_lines, preprocessor_chars, preprocessor_lines;
+      Measure<size_t> source_chars, source_lines, preprocessor_chars, preprocessor_lines;
       Measure<double> preprocessor_time, compile_time;
       MeasuresMap measures;
       std::vector<std::string> inputs;
@@ -766,6 +758,75 @@ void analyse_commands(Database2& db, const std::vector<command_analysis_mode>& m
   }
 }
 
+ProcessResult list_includes(const CompilationCommand& command,
+                          std::vector<Include>& includes) {
+  ProcessResult res;
+  res.command = redirect_gcc_output(command) + " -E";
+
+  bp::ipstream out_stream, err_stream;
+
+  bp::child p(res.command,
+              bp::start_dir = command.directory,
+              bp::std_in.close(),
+              bp::std_out > out_stream,
+              bp::std_err > err_stream
+              );
+
+  std::future<IncludeTree> include_tree = std::async(std::launch::async, [&out_stream](){
+    return build_include_tree(out_stream);
+  });
+
+  std::future<std::string> err_f = std::async(std::launch::async, [&err_stream](){
+    std::ostringstream ss;
+    ss << err_stream.rdbuf();
+    return ss.str();
+  });
+
+  p.wait();
+
+  includes = linearize(include_tree.get());
+
+  res.code = p.exit_code();
+  res.err = err_f.get();
+
+  return res;
+}
+
+void analyse_includes(Database2& db, const unsigned int num_threads) {
+  auto commands = get_object_commands(db);
+
+  ProgressBar progress;
+  progress.start(commands.size());
+
+#pragma omp parallel for num_threads(num_threads) schedule(guided)
+  for(size_t i = 0; i < commands.size(); ++i) {
+
+    std::vector<Include> includes;
+    auto res = list_includes(commands[i], includes);
+
+#pragma omp critical
+    {
+      if (res.code == 0) {
+//        std::vector<std::string> inputs;
+//        const long long artifact_id = db.artifact_id_by_command(commands[i].id);
+//        for(const long long dependency_id : db.dependencies(artifact_id))
+//          inputs.emplace_back(db.artifact_name_by_id(dependency_id));
+
+        LOG(always) << termcolor::green
+                    << commands[i].directory << " "
+                    << commands[i].executable << " "
+                    << commands[i].args << termcolor::reset;
+        for(const Include& include : includes)
+          LOGGER << io::repeat("| ", include.depth) << include.filename << " (" << include.lines_count << " lines)";
+      } else {
+        log_command_error(commands[i].directory, res);
+      }
+
+      ++progress;
+    }
+  }
+}
+
 } // anonymous namespace
 
 boost::program_options::options_description Analyse_Task::options()
@@ -801,6 +862,7 @@ boost::program_options::options_description Analyse_Task::options()
       ("command",
        bpo::value<std::vector<command_analysis_mode>>()->implicit_value({command_analysis_mode::all}, "all"),
        "Analyse compilation commands (source_count, preprocessor-count, preprocessor-time, compile-time, link-time, all).")
+      ("includes", "Analyse include tree.")
       ;
 
   return opt;
@@ -829,7 +891,8 @@ int Analyse_Task::execute(const std::vector<std::string>& args)
   if (vm.count("duplicated-symbols")
       + vm.count("undefined-symbols")
       + vm.count("useless-dependencies")
-      + vm.count("command") != 1) {
+      + vm.count("command")
+      + vm.count("includes") != 1) {
     std::cerr << "Invalid analysis type" << std::endl;
     return -1;
   }
@@ -863,6 +926,8 @@ int Analyse_Task::execute(const std::vector<std::string>& args)
     std::ofstream out(ss.str());
     analyse_commands(db, modes, mNumThreads, out);
     out.close();
+  } else if (vm.count("includes")) {
+    analyse_includes(db, mNumThreads);
   }
 
   return 0;

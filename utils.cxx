@@ -8,6 +8,8 @@
 
 #include <wordexp.h>
 
+#include <boost/filesystem/operations.hpp>
+
 #include "Database2.hxx"
 #include "query-utils.hxx"
 
@@ -40,6 +42,10 @@ boost::filesystem::path expand_path(const std::string& in, const boost::filesyst
   wordfree(&wx);
 
   return boost::filesystem::canonical(out, base);
+}
+
+boost::filesystem::path expand_path(const std::string& in) {
+  return expand_path(in, boost::filesystem::current_path());
 }
 
 const char* get_library_type(const std::string& value) {
@@ -132,15 +138,32 @@ std::vector<std::string> split(std::string str, const char delim) {
   return tokens;
 }
 
-void wc(std::istream& in, long long& c, long long& l) {
+void wc(std::istream& in, size_t& c, size_t& l) {
   for(std::string line; std::getline(in, line); ) {
     c += line.size();
     ++l;
   }
 }
 
-void wc(const std::string& file, long long& c, long long& l) {
+void wc(const std::string& file, size_t& c, size_t& l) {
   std::ifstream in(file);
 
   wc(in, c, l);
 }
+
+TempFileGuard::TempFileGuard(const boost::filesystem::path& p) : mPath(p) {}
+
+TempFileGuard::~TempFileGuard() { boost::filesystem::remove_all(mPath); }
+
+const boost::filesystem::path&TempFileGuard::path() const { return mPath; }
+
+namespace io {
+
+std::ostream& operator<<(std::ostream& os, const io::repeat& m)
+{
+  for(size_t i = m.n; i > 0; --i)
+    os << m.value;
+  return os;
+}
+
+} // namespace io

@@ -6,12 +6,12 @@
 #include <memory>
 #include <functional>
 
-#include "command-task.hxx"
-#include "db-task.hxx"
-#include "extract-task.hxx"
-#include "analyse-task.hxx"
-#include "dependencies-task.hxx"
-#include "artifacts-task.hxx"
+#include "tasks/command-task.hxx"
+#include "tasks/db-task.hxx"
+#include "tasks/extract-task.hxx"
+#include "tasks/analyse-task.hxx"
+#include "tasks/dependencies-task.hxx"
+#include "tasks/artifacts-task.hxx"
 
 namespace {
 #define COMMAND_FACTORY(T) [](const std::vector<std::string>& args){ return std::make_unique<T>(args); }

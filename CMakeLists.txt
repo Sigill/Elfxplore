@@ -31,7 +31,8 @@ add_library(elfxplore-core STATIC
     Database2.cxx
     utils.cxx
     query-utils.cxx
-    command-utils.cxx)
+    command-utils.cxx
+    linemarkers.cxx)
 target_include_directories(elfxplore-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(elfxplore-core
     PUBLIC SQLiteCpp Boost::system Boost::program_options Boost::filesystem
@@ -40,12 +41,12 @@ target_link_libraries(elfxplore-core
 add_executable(elfxplore
     progressbar.cxx
     task.cxx
-    db-task.cxx
-    command-task.cxx
-    extract-task.cxx
-    dependencies-task.cxx
-    analyse-task.cxx
-    artifacts-task.cxx
+    tasks/db-task.cxx
+    tasks/command-task.cxx
+    tasks/extract-task.cxx
+    tasks/dependencies-task.cxx
+    tasks/analyse-task.cxx
+    tasks/artifacts-task.cxx
     elfxplore.cxx)
 target_include_directories(elfxplore PRIVATE ${TERMCOLOR_INCLUDE_DIR})
 target_link_libraries(elfxplore elfxplore-core Boost::system Boost::program_options Boost::filesystem Threads::Threads SQLiteCpp OpenMP::OpenMP_CXX shellwords)
