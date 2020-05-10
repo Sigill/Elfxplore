@@ -5,15 +5,19 @@
 #include <deque>
 #include <string>
 #include <iosfwd>
+#include <functional>
 
 class PreprocessedFile {
 public:
+  std::size_t included_at_line;
   std::string filename;
   std::vector<std::string> lines;
-  std::vector<std::pair<size_t, PreprocessedFile*>> includes;
-  std::size_t last_line;
+  std::vector<PreprocessedFile*> includes;
+  std::size_t depth;
+  std::size_t lines_count, cumulated_lines_count;
+  std::size_t last_effective_line;
 
-  explicit PreprocessedFile(std::string filename);
+  explicit PreprocessedFile(std::size_t included_at_line, std::string filename);
 };
 
 class IncludeTree {
@@ -33,23 +37,8 @@ private:
   void relocate_files(const IncludeTree& other);
 };
 
-IncludeTree build_include_tree(std::istream& in);
+IncludeTree build_include_tree(std::istream& in, const bool store_lines = true);
 
-class Include {
-public:
-  std::string filename;
-  size_t line;
-  size_t depth;
-  size_t lines_count;
-
-  Include(std::string filename, size_t line, size_t depth, size_t lines_count)
-    : filename(std::move(filename))
-    , line(line)
-    , depth(depth)
-    , lines_count(lines_count)
-  {}
-};
-
-std::vector<Include> linearize(const IncludeTree& tree);
+void preorder_walk(const IncludeTree& tree, std::function<void(const PreprocessedFile&)> cbk);
 
 #endif // LINEMARKERS_HXX

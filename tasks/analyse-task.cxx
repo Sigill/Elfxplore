@@ -759,7 +759,7 @@ void analyse_commands(Database2& db, const std::vector<command_analysis_mode>& m
 }
 
 ProcessResult list_includes(const CompilationCommand& command,
-                          std::vector<Include>& includes) {
+                            IncludeTree& include_tree) {
   ProcessResult res;
   res.command = redirect_gcc_output(command) + " -E";
 
@@ -772,8 +772,8 @@ ProcessResult list_includes(const CompilationCommand& command,
               bp::std_err > err_stream
               );
 
-  std::future<IncludeTree> include_tree = std::async(std::launch::async, [&out_stream](){
-    return build_include_tree(out_stream);
+  std::future<IncludeTree> include_tree_f = std::async(std::launch::async, [&out_stream](){
+    return build_include_tree(out_stream, false);
   });
 
   std::future<std::string> err_f = std::async(std::launch::async, [&err_stream](){
@@ -784,7 +784,7 @@ ProcessResult list_includes(const CompilationCommand& command,
 
   p.wait();
 
-  includes = linearize(include_tree.get());
+  include_tree = include_tree_f.get();
 
   res.code = p.exit_code();
   res.err = err_f.get();
@@ -801,23 +801,22 @@ void analyse_includes(Database2& db, const unsigned int num_threads) {
 #pragma omp parallel for num_threads(num_threads) schedule(guided)
   for(size_t i = 0; i < commands.size(); ++i) {
 
-    std::vector<Include> includes;
-    auto res = list_includes(commands[i], includes);
+    IncludeTree include_tree;
+    auto res = list_includes(commands[i], include_tree);
 
 #pragma omp critical
     {
       if (res.code == 0) {
-//        std::vector<std::string> inputs;
-//        const long long artifact_id = db.artifact_id_by_command(commands[i].id);
-//        for(const long long dependency_id : db.dependencies(artifact_id))
-//          inputs.emplace_back(db.artifact_name_by_id(dependency_id));
-
         LOG(always) << termcolor::green
                     << commands[i].directory << " "
                     << commands[i].executable << " "
                     << commands[i].args << termcolor::reset;
-        for(const Include& include : includes)
-          LOGGER << io::repeat("| ", include.depth) << include.filename << " (" << include.lines_count << " lines)";
+
+        preorder_walk(include_tree, [](const PreprocessedFile& file){
+          LOGGER << io::repeat("| ", file.depth)
+                 << file.included_at_line << " "
+                 << file.filename << " (" << file.lines_count << " / " << file.cumulated_lines_count << " lines)";
+        });
       } else {
         log_command_error(commands[i].directory, res);
       }

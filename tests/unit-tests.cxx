@@ -139,49 +139,78 @@ void d2();
   EXPECT_EQ(tree.files[4].filename, "b.h");
   EXPECT_EQ(tree.files[5].filename, "e.cpp");
 
-  EXPECT_EQ(tree.files[0].last_line, 0UL);
-  ASSERT_EQ(tree.files[0].includes.size(), 2UL);
-  EXPECT_EQ(tree.files[0].includes[0].first, 0UL);
-  EXPECT_EQ(tree.files[0].includes[0].second, &tree.files[1]);
-  EXPECT_EQ(tree.files[0].includes[1].first, 0UL);
-  EXPECT_EQ(tree.files[0].includes[1].second, &tree.files[5]);
-  EXPECT_THAT(tree.files[0].lines, ::testing::ElementsAre("#include \"d.cpp\"",
-                                                          "#include \"e.cpp\""));
+  const auto& a = tree.files[3];
+  EXPECT_EQ(a.included_at_line, 3UL);
+  EXPECT_EQ(a.depth, 3UL);
+  EXPECT_EQ(a.last_effective_line, 3UL);
+  EXPECT_EQ(a.lines_count, 3UL);
+  EXPECT_EQ(a.cumulated_lines_count, 3UL);
+  EXPECT_THAT(a.includes, ::testing::IsEmpty());
+  EXPECT_THAT(a.lines, ::testing::ElementsAre("",
+                                              "",
+                                              "void a3();"));
 
-  EXPECT_EQ(tree.files[1].last_line, 2UL);
-  ASSERT_EQ(tree.files[1].includes.size(), 1UL);
-  EXPECT_EQ(tree.files[1].includes[0].first, 1UL);
-  EXPECT_EQ(tree.files[1].includes[0].second, &tree.files[2]);
-  EXPECT_THAT(tree.files[1].lines, ::testing::ElementsAre("#include \"c.h\"",
-                                                          "void d2();"));
+  const auto& b = tree.files[4];
+  EXPECT_EQ(b.included_at_line, 12UL);
+  EXPECT_EQ(b.depth, 3UL);
+  EXPECT_EQ(b.last_effective_line, 4UL);
+  EXPECT_EQ(b.lines_count, 4UL);
+  EXPECT_EQ(b.cumulated_lines_count, b.lines_count);
+  EXPECT_THAT(b.includes, ::testing::IsEmpty());
+  EXPECT_THAT(b.lines, ::testing::ElementsAre("",
+                                              "",
+                                              "",
+                                              "void b4();"));
 
-  EXPECT_EQ(tree.files[2].last_line, 13UL);
-  ASSERT_EQ(tree.files[2].includes.size(), 2UL);
-  EXPECT_EQ(tree.files[2].includes[0].first, 3UL);
-  EXPECT_EQ(tree.files[2].includes[0].second, &tree.files[3]);
-  EXPECT_EQ(tree.files[2].includes[1].first, 12UL);
-  EXPECT_EQ(tree.files[2].includes[1].second, &tree.files[4]);
-  EXPECT_THAT(tree.files[2].lines, ::testing::ElementsAre("",
-                                                          "",
-                                                          "#include \"a.h\"",
-                                                          "#line 12",
-                                                          "#include \"b.h\"",
-                                                          "void c13();"));
+  const auto& c = tree.files[2];
+  EXPECT_EQ(c.included_at_line, 1UL);
+  EXPECT_EQ(c.depth, 2UL);
+  EXPECT_EQ(c.last_effective_line, 13UL);
+  EXPECT_EQ(c.lines_count, 5UL);
+  EXPECT_EQ(c.cumulated_lines_count, c.lines_count + a.cumulated_lines_count + b.cumulated_lines_count);
+  EXPECT_THAT(c.includes, ::testing::ElementsAre(&tree.files[3], &tree.files[4]));
+  EXPECT_THAT(c.lines, ::testing::ElementsAre("",
+                                              "",
+                                              "#include \"a.h\"",
+                                              "#line 12",
+                                              "#include \"b.h\"",
+                                              "void c13();"));
 
-  EXPECT_EQ(tree.files[3].last_line, 3UL);
-  ASSERT_EQ(tree.files[3].includes.size(), 0UL);
-  EXPECT_THAT(tree.files[3].lines, ::testing::ElementsAre("",
-                                                          "",
-                                                          "void a3();"));
+  const auto& d = tree.files[1];
+  EXPECT_EQ(d.included_at_line, 0UL);
+  EXPECT_EQ(d.depth, 1UL);
+  EXPECT_EQ(d.last_effective_line, 2UL);
+  EXPECT_EQ(d.lines_count, 2UL);
+  EXPECT_EQ(d.cumulated_lines_count, d.lines_count + c.cumulated_lines_count);
+  EXPECT_THAT(d.includes, ::testing::ElementsAre(&tree.files[2]));
+  EXPECT_THAT(d.lines, ::testing::ElementsAre("#include \"c.h\"",
+                                              "void d2();"));
 
-  EXPECT_EQ(tree.files[4].last_line, 4UL);
-  ASSERT_EQ(tree.files[4].includes.size(), 0UL);
-  EXPECT_THAT(tree.files[4].lines, ::testing::ElementsAre("",
-                                                          "",
-                                                          "",
-                                                          "void b4();"));
+  const auto& e = tree.files[5];
+  EXPECT_EQ(e.included_at_line, 0UL);
+  EXPECT_EQ(e.depth, 1UL);
+  EXPECT_EQ(e.last_effective_line, 1UL);
+  EXPECT_EQ(e.lines_count, 1UL);
+  EXPECT_EQ(e.cumulated_lines_count, e.cumulated_lines_count);
+  EXPECT_THAT(e.includes, ::testing::IsEmpty());
+  EXPECT_THAT(e.lines, ::testing::ElementsAre("void e1();"));
 
-  EXPECT_EQ(tree.files[5].last_line, 1UL);
-  ASSERT_EQ(tree.files[5].includes.size(), 0UL);
-  EXPECT_THAT(tree.files[5].lines, ::testing::ElementsAre("void e1();"));
+  const auto& _ = tree.files[0];
+  EXPECT_EQ(_.included_at_line, 0UL);
+  EXPECT_EQ(_.depth, 0UL);
+  EXPECT_EQ(_.last_effective_line, 0UL);
+  EXPECT_EQ(_.lines_count, 0UL);
+  EXPECT_EQ(_.cumulated_lines_count, _.lines_count + d.cumulated_lines_count + e.cumulated_lines_count);
+  EXPECT_THAT(_.includes, ::testing::ElementsAre(&tree.files[1], &tree.files[5]));
+  EXPECT_THAT(_.lines, ::testing::ElementsAre("#include \"d.cpp\"",
+                                              "#include \"e.cpp\""));
+
+  std::vector<const PreprocessedFile*> llview;
+  preorder_walk(tree, [&llview](const PreprocessedFile& file){ llview.push_back(&file); });
+  ASSERT_EQ(llview.size(), 5UL);
+  EXPECT_EQ(llview[0]->filename, "d.cpp");
+  EXPECT_EQ(llview[1]->filename, "c.h");
+  EXPECT_EQ(llview[2]->filename, "a.h");
+  EXPECT_EQ(llview[3]->filename, "b.h");
+  EXPECT_EQ(llview[4]->filename, "e.cpp");
 }
