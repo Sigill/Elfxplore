@@ -9,6 +9,7 @@ find_package(SQLite3 REQUIRED)
 find_package(SQLiteCpp REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(Shellwords 0.2 REQUIRED)
+find_package(Linemarkers 0.1 REQUIRED)
 
 include(ExternalProject)
 
@@ -31,8 +32,7 @@ add_library(elfxplore-core STATIC
     Database2.cxx
     utils.cxx
     query-utils.cxx
-    command-utils.cxx
-    linemarkers.cxx)
+    command-utils.cxx)
 target_include_directories(elfxplore-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(elfxplore-core
     PUBLIC SQLiteCpp Boost::system Boost::program_options Boost::filesystem
@@ -49,7 +49,7 @@ add_executable(elfxplore
     tasks/artifacts-task.cxx
     elfxplore.cxx)
 target_include_directories(elfxplore PRIVATE ${TERMCOLOR_INCLUDE_DIR})
-target_link_libraries(elfxplore elfxplore-core Boost::system Boost::program_options Boost::filesystem Threads::Threads SQLiteCpp OpenMP::OpenMP_CXX shellwords)
+target_link_libraries(elfxplore PRIVATE elfxplore-core Boost::system Boost::program_options Boost::filesystem Threads::Threads SQLiteCpp OpenMP::OpenMP_CXX shellwords linemarkers)
 
 include(CTest)
 

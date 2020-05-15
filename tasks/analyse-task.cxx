@@ -26,7 +26,7 @@
 #include "csvprinter.h"
 #include "infix_iterator.hxx"
 #include "process-utils.hxx"
-#include "linemarkers.hxx"
+#include "linemarkers/linemarkers.hxx"
 
 namespace bpo = boost::program_options;
 namespace bfs = boost::filesystem;
@@ -773,7 +773,7 @@ ProcessResult list_includes(const CompilationCommand& command,
               );
 
   std::future<IncludeTree> include_tree_f = std::async(std::launch::async, [&out_stream](){
-    return build_include_tree(out_stream, false);
+    return IncludeTree::from_stream(out_stream, false);
   });
 
   std::future<std::string> err_f = std::async(std::launch::async, [&err_stream](){
