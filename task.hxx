@@ -4,28 +4,38 @@
 #include <iosfwd>
 #include <string>
 #include <vector>
+#include <memory>
+
 #include <boost/program_options/options_description.hpp>
+
+class Database2;
+
+enum TaskStatus {
+  ERROR = -2,
+  WRONG_ARGS = -1,
+  SUCCESS = 0
+};
 
 class Task
 {
 private:
-  std::vector<std::string> mCommand;
-  bool mDryRun = false;
+  bool mDryRun = true;
+  std::shared_ptr<Database2> mDB;
 
 public:
-  Task(const std::vector<std::string>& mCommand);
+  Task();
   virtual ~Task() = default;
 
-  void usage(std::ostream& out);
   virtual int execute(const std::vector<std::string>& args) = 0;
 
-  bool dryrun() const { return mDryRun; }
+  void set_dryrun(bool b) { mDryRun = b; }
+  void set_database(std::shared_ptr<Database2> db) { std::swap(db, mDB); }
+
+  virtual boost::program_options::options_description options() = 0;
 
 protected:
-  boost::program_options::options_description default_options();
-
-private:
-  virtual boost::program_options::options_description options() = 0;
+  bool dryrun() const { return mDryRun; }
+  Database2& db() { return *mDB; }
 };
 
 #endif // COMMAND_HXX

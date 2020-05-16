@@ -46,6 +46,8 @@ where dependencies.dependee_id = ? and artifacts.type = "source")"))
   db.exec("PRAGMA page_size=65536;");
   db.exec("PRAGMA locking_mode=EXCLUSIVE;");
   db.exec("PRAGMA synchronous=OFF;");
+
+  create();
 }
 
 void Database2::create() {
@@ -56,7 +58,7 @@ create table if not exists "commands" (
   "executable" VARCHAR(256) NOT NULL,
   "args" TEXT NOT NULL
 );
-create unique index "unique_commands" on "commands" ("directory", "executable", "args");
+create unique index if not exists "unique_commands" on "commands" ("directory", "executable", "args");
 
 create table if not exists "artifacts" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -64,24 +66,24 @@ create table if not exists "artifacts" (
   "type" VARCHAR(16) NOT NULL,
   "generating_command_id" INTEGER NOT NULL DEFAULT -1
 );
-create unique index "unique_artifacts" on "artifacts" ("name");
-create index "artifact_by_type" on "artifacts" ("type");
-create index "generated_artifacts" on "artifacts" ("generating_command_id");
+create unique index if not exists "unique_artifacts" on "artifacts" ("name");
+create index if not exists "artifact_by_type" on "artifacts" ("type");
+create index if not exists "generated_artifacts" on "artifacts" ("generating_command_id");
 
 create table if not exists "dependencies" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "dependee_id" INTEGER NOT NULL,
   "dependency_id" INTEGER NOT NULL
 );
-create unique index "unique_dependency" on "dependencies" ("dependee_id", "dependency_id");
+create unique index if not exists "unique_dependency" on "dependencies" ("dependee_id", "dependency_id");
 
 create table if not exists "symbols" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" TEXT NOT NULL,
   "dname" TEXT NOT NULL
 );
-create unique index "unique_symbol" on "symbols" ("name");
-create index "symbol_by_dname" on "symbols" ("dname");
+create unique index if not exists "unique_symbol" on "symbols" ("name");
+create index if not exists "symbol_by_dname" on "symbols" ("dname");
 
 create table if not exists "symbol_references" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -91,10 +93,10 @@ create table if not exists "symbol_references" (
   "type" VARCHAR(1) NOT NULL,
   "size" INTEGER DEFAULT NULL
 );
-create index "symbol_reference_by_artifact" on "symbol_references" ("artifact_id");
-create index "symbol_reference_by_symbol" on "symbol_references" ("symbol_id");
-create index "symbol_reference_by_category" on "symbol_references" ("category");
-create index "symbol_reference_by_type" on "symbol_references" ("type");
+create index if not exists "symbol_reference_by_artifact" on "symbol_references" ("artifact_id");
+create index if not exists "symbol_reference_by_symbol" on "symbol_references" ("symbol_id");
+create index if not exists "symbol_reference_by_category" on "symbol_references" ("category");
+create index if not exists "symbol_reference_by_type" on "symbol_references" ("type");
 )";
 
   db.exec(queries);

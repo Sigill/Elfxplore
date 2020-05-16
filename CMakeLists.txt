@@ -32,7 +32,8 @@ add_library(elfxplore-core STATIC
     Database2.cxx
     utils.cxx
     query-utils.cxx
-    command-utils.cxx)
+    command-utils.cxx
+    database-utils.cxx)
 target_include_directories(elfxplore-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(elfxplore-core
     PUBLIC SQLiteCpp Boost::system Boost::program_options Boost::filesystem
@@ -42,7 +43,6 @@ add_executable(elfxplore
     progressbar.cxx
     task.cxx
     tasks/db-task.cxx
-    tasks/command-task.cxx
     tasks/extract-task.cxx
     tasks/dependencies-task.cxx
     tasks/analyse-task.cxx

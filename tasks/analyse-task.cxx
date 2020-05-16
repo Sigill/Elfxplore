@@ -813,7 +813,7 @@ void analyse_includes(Database2& db, const unsigned int num_threads) {
                     << commands[i].args << termcolor::reset;
 
         preorder_walk(include_tree, [](const PreprocessedFile& file){
-          LOGGER << io::repeat("| ", file.depth)
+          LOGGER << io::repeat("| ", file.depth - 1)
                  << file.included_at_line << " "
                  << file.filename << " (" << file.lines_count << " / " << file.cumulated_lines_count << " lines)";
         });
@@ -830,7 +830,7 @@ void analyse_includes(Database2& db, const unsigned int num_threads) {
 
 boost::program_options::options_description Analyse_Task::options()
 {
-  bpo::options_description opt = default_options();
+  bpo::options_description opt("Options");
   opt.add_options()
       ("type",
        bpo::value<std::vector<std::string>>()->multitoken()->default_value({}, ""),
@@ -873,19 +873,11 @@ int Analyse_Task::execute(const std::vector<std::string>& args)
 
   try {
     bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
-
-    if (vm.count("help")) {
-      usage(std::cout);
-      return 0;
-    }
-
     bpo::notify(vm);
   } catch(bpo::error &err) {
     std::cerr << err.what() << std::endl;
-    return -1;
+    return TaskStatus::ERROR;
   }
-
-  Database2 db(vm["db"].as<std::string>());
 
   if (vm.count("duplicated-symbols")
       + vm.count("undefined-symbols")
@@ -897,22 +889,22 @@ int Analyse_Task::execute(const std::vector<std::string>& args)
   }
 
   if (vm.count("duplicated-symbols")) {
-    analyse_duplicated_symbols(db,
+    analyse_duplicated_symbols(db(),
                                vm["type"].as<std::vector<std::string>>(),
                                vm["not-type"].as<std::vector<std::string>>(),
                                vm["category"].as<std::vector<std::string>>(),
                                vm["not-category"].as<std::vector<std::string>>());
   } else if (vm.count("undefined-symbols")) {
-    const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db, vm["artifact"].as<std::vector<std::string>>());
-    analyse_undefined_symbols(db, artifacts);
+    const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db(), vm["artifact"].as<std::vector<std::string>>());
+    analyse_undefined_symbols(db(), artifacts);
   } else if (vm.count("useless-dependencies")) {
     const auto mode = vm["useless-dependencies"].as<useless_dependencies_analysis_modes>();
-    const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db, vm["artifact"].as<std::vector<std::string>>());
+    const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db(), vm["artifact"].as<std::vector<std::string>>());
 
     if (mode == useless_dependencies_analysis_modes::symbols) {
-      analyse_useless_dependencies_symbols(db, artifacts);
+      analyse_useless_dependencies_symbols(db(), artifacts);
     } else if (mode == useless_dependencies_analysis_modes::ldd) {
-      analyse_useless_dependencies_ldd(db, artifacts);
+      analyse_useless_dependencies_ldd(db(), artifacts);
     }
   } else if (vm.count("command")) {
     const auto modes = expand_modes(vm["command"].as<std::vector<command_analysis_mode>>());
@@ -923,10 +915,10 @@ int Analyse_Task::execute(const std::vector<std::string>& args)
     ss << bfs::current_path().string() << "/" << std::put_time(std::localtime(&now), "elfxplore-commands-%Y-%m-%d-%H-%M-%S.csv");
 
     std::ofstream out(ss.str());
-    analyse_commands(db, modes, mNumThreads, out);
+    analyse_commands(db(), modes, mNumThreads, out);
     out.close();
   } else if (vm.count("includes")) {
-    analyse_includes(db, mNumThreads);
+    analyse_includes(db(), mNumThreads);
   }
 
   return 0;

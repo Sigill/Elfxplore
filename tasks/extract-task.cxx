@@ -11,8 +11,6 @@
 
 #include <termcolor/termcolor.hpp>
 
-#include <SQLiteCpp/Transaction.h>
-
 #include "ArtifactSymbols.hxx"
 #include "Database2.hxx"
 #include "utils.hxx"
@@ -86,7 +84,7 @@ inner join artifacts on artifacts.generating_command_id = commands.id)");
     const std::string args = stm.getColumn(3).getString();
     const long long artifact_id = stm.getColumn(4).getInt64();
     const std::string output = stm.getColumn(5).getString();
-    const std::string output_type = stm.getColumn(5).getString();
+    const std::string output_type = stm.getColumn(6).getString();
 
     const CompilationCommandDependencies dependencies = parse_dependencies(directory, executable, args, default_library_directories);
 
@@ -241,7 +239,7 @@ public:
 
 boost::program_options::options_description Extract_Task::options()
 {
-  bpo::options_description opt = default_options();
+  bpo::options_description opt("Options");
   opt.add_options()
       ("dependencies", "Extract dependencies from commands.")
       ("symbols", "Extract symbols from artifacts.")
@@ -256,37 +254,27 @@ int Extract_Task::execute(const std::vector<std::string>& args)
 
   try {
     bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
-
-    if (vm.count("help")) {
-      usage(std::cout);
-      return 0;
-    }
-
     bpo::notify(vm);
   } catch(bpo::error &err) {
     std::cerr << err.what() << std::endl;
-    return -1;
+    return TaskStatus::ERROR;
   }
 
-  Database2 db(vm["db"].as<std::string>());
-
-  SQLite::Transaction transaction(db.database());
-
   if (vm.count("dependencies")) {
-    extract_dependencies(db);
+    extract_dependencies(db());
 
     LOGGER << termcolor::blue << "Status" << termcolor::reset;
-    std::cout << db.count_artifacts() << " artifacts" << std::endl;
-    for(const auto& type : db.count_artifacts_by_type()) {
+    std::cout << db().count_artifacts() << " artifacts" << std::endl;
+    for(const auto& type : db().count_artifacts_by_type()) {
       LOGGER << "\t" << type.second << " " << type.first;
     }
-    std::cout << db.count_dependencies() << " dependencies" << std::endl;
+    std::cout << db().count_dependencies() << " dependencies" << std::endl;
   }
 
   if (vm.count("symbols")) {
-    BufferedTasks<std::string> tasks(1, SymbolExtractor(db));
+    BufferedTasks<std::string> tasks(1, SymbolExtractor(db()));
 
-    auto q = db.statement("select id, name, type from artifacts where type not in (\"source\", \"static\")");
+    auto q = db().statement("select id, name, type from artifacts where type not in (\"source\", \"static\")");
     while (q.executeStep()) {
       std::string name = q.getColumn(1).getString();
       if (bfs::exists(name)) {
@@ -297,15 +285,8 @@ int Extract_Task::execute(const std::vector<std::string>& args)
     tasks.done();
 
     LOGGER << termcolor::blue << "Status" << termcolor::reset;
-    std::cout << db.count_symbols() << " symbols" << std::endl;
-    std::cout << db.count_symbol_references() << " symbol references" << std::endl;
-  }
-
-  if (!dryrun()) {
-    transaction.commit();
-    db.optimize();
-  } else {
-    LOG(always) << "Dry-run, aborting transaction";
+    std::cout << db().count_symbols() << " symbols" << std::endl;
+    std::cout << db().count_symbol_references() << " symbol references" << std::endl;
   }
 
   return 0;

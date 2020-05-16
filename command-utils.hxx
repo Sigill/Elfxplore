@@ -4,15 +4,10 @@
 #include <string>
 #include <vector>
 #include <set>
-#include <stdexcept>
 
 #include <boost/filesystem/path.hpp>
 
 bool is_cc(const std::string& command);
-
-struct arg_separator_error : public std::runtime_error{
-  explicit arg_separator_error(const std::string& what_arg):std::runtime_error(what_arg) { }
-};
 
 class CompilationCommand {
 public:

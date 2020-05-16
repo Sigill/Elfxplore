@@ -340,7 +340,7 @@ void print(const std::map<long long, ArtifactData>& artifacts, const std::set<De
 
 boost::program_options::options_description Dependencies_Task::options()
 {
-  bpo::options_description opt = default_options();
+  bpo::options_description opt("Options");
   opt.add_options()
       ("type",
        bpo::value<std::vector<std::string>>()->multitoken()->default_value({}, ""),
@@ -372,26 +372,17 @@ int Dependencies_Task::execute(const std::vector<std::string>& args)
 
   try {
     bpo::store(bpo::command_line_parser(args).options(options()).positional(p).run(), vm);
-
-    if (vm.count("help")) {
-      usage(std::cout);
-      return 0;
-    }
-
     bpo::notify(vm);
   } catch(bpo::error &err) {
     std::cerr << err.what() << std::endl;
-    return -1;
+    return TaskStatus::ERROR;
   }
-
-  Database2 db(vm["db"].as<std::string>());
 
   const std::string format = vm["format"].as<std::string>();
 
   if (!(format == "txt" || format == "tlp" || format == "dot")) {
     std::cerr << "Invalid format: " << format << std::endl;
-    usage(std::cerr);
-    return -1;
+    return TaskStatus::WRONG_ARGS;
   }
 
   const bool follow = vm.count("follow") > 0;
@@ -402,34 +393,34 @@ int Dependencies_Task::execute(const std::vector<std::string>& args)
   std::set<Dependency> dependencies;
 
   if (vm.count("artifact") == 0) {
-    get_all_dependencies(db, included_types, excluded_types, dependencies);
+    get_all_dependencies(db(), included_types, excluded_types, dependencies);
   } else {
     const bool export_dependencies = vm.count("dependencies") == vm.count("dependees") || vm.count("dependencies") == 1;
     const bool export_dependees = vm.count("dependencies") == vm.count("dependees") || vm.count("dependees") == 1;
 
     for(const std::string& artifact : vm["artifact"].as<std::vector<std::string>>())
     {
-      const long long id = db.artifact_id_by_name(artifact);
+      const long long id = db().artifact_id_by_name(artifact);
 
       if (follow) {
         if (export_dependencies)
-          get_all_dependencies_for(db, id, included_types, excluded_types, dependencies);
+          get_all_dependencies_for(db(), id, included_types, excluded_types, dependencies);
 
         if (export_dependees)
-          get_all_dependees_for(db, id, included_types, excluded_types, dependencies);
+          get_all_dependees_for(db(), id, included_types, excluded_types, dependencies);
       } else {
         if (export_dependencies)
-          get_dependencies_for(db, id, included_types, excluded_types, dependencies);
+          get_dependencies_for(db(), id, included_types, excluded_types, dependencies);
 
         if (export_dependees)
-          get_dependees_for(db, id, included_types, excluded_types, dependencies);
+          get_dependees_for(db(), id, included_types, excluded_types, dependencies);
       }
     }
   }
 
-  const std::map<long long, ArtifactData> artifacts = map_artifacts(db, dependencies, vm.count("full-path") > 0);
+  const std::map<long long, ArtifactData> artifacts = map_artifacts(db(), dependencies, vm.count("full-path") > 0);
 
   print(artifacts, dependencies, std::cout, format);
 
-  return 0;
+  return TaskStatus::SUCCESS;
 }

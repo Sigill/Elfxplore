@@ -11,7 +11,7 @@ namespace bpo = boost::program_options;
 
 boost::program_options::options_description Artifacts_Task::options()
 {
-  bpo::options_description opt = default_options();
+  bpo::options_description opt("Options");
   opt.add_options()
       ("type",
        bpo::value<std::vector<std::string>>()->multitoken()->default_value({}, ""),
@@ -30,19 +30,11 @@ int Artifacts_Task::execute(const std::vector<std::string>& args)
 
   try {
     bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
-
-    if (vm.count("help")) {
-      usage(std::cout);
-      return 0;
-    }
-
     bpo::notify(vm);
   } catch(bpo::error &err) {
     std::cerr << err.what() << std::endl;
-    return -1;
+    return TaskStatus::ERROR;
   }
-
-  Database2 db(vm["db"].as<std::string>());
 
   const std::vector<std::string> included_types = vm["type"].as<std::vector<std::string>>(),
                                  excluded_types = vm["not-type"].as<std::vector<std::string>>();
@@ -65,7 +57,7 @@ int Artifacts_Task::execute(const std::vector<std::string>& args)
 
   ss << " order by type asc, name asc";
 
-  auto stm = db.statement(ss.str());
+  auto stm = db().statement(ss.str());
   while (stm.executeStep()) {
     std::cout << stm.getColumn(0).getString() << " : " << stm.getColumn(1).getString() << "\n";
   }

@@ -78,10 +78,10 @@ private:
   Lazy<SQLite::Statement> get_sources_stm;
   Lazy<SQLite::Statement> undefined_symbols_stm;
 
+  void create();
+
 public:
   explicit Database2(const std::string& file);
-
-  void create();
 
   void truncate_symbols();
   void truncate_symbol_references();

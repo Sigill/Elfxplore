@@ -25,7 +25,7 @@ struct EndlStream {
     explicit EndlStream_(std::ostream& r) : os(r), live(true) {}
     EndlStream_(EndlStream_& r) : os(r.os), live(true) { r.live = false; }
     EndlStream_(EndlStream_&& r) : os(r.os), live(true) { r.live = false; }
-    ~EndlStream_() { if(live) { os << std::endl; } }
+    ~EndlStream_() { if(live) { os << '\n'; } }
     std::ostream& os;
     bool live;
   };
