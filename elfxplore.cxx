@@ -17,6 +17,8 @@
 #include "Database2.hxx"
 #include "command-utils.hxx"
 #include "database-utils.hxx"
+#include "utils.hxx"
+
 #include "tasks/command-task.hxx"
 #include "tasks/db-task.hxx"
 #include "tasks/extract-task.hxx"

@@ -3,11 +3,11 @@
 #include <iostream>
 #include <algorithm>
 #include <functional>
+#include <fstream>
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/filesystem/operations.hpp>
-#include <boost/process.hpp>
 
 #include <termcolor/termcolor.hpp>
 
@@ -17,95 +17,10 @@
 #include "command-utils.hxx"
 #include "nm.hxx"
 #include "logger.hxx"
+#include "database-utils.hxx"
 
 namespace bpo = boost::program_options;
 namespace bfs = boost::filesystem;
-namespace bp = boost::process;
-
-namespace {
-
-std::vector<bfs::path> load_default_library_directories() {
-  bp::ipstream pipe_stream;
-  bp::child c("gcc --print-search-dir", bp::std_out > pipe_stream, bp::std_err > bp::null);
-
-  std::vector<bfs::path> paths;
-
-  const std::string prefix = "libraries: =";
-
-  std::string line;
-  while (pipe_stream && std::getline(pipe_stream, line)) {
-    if (!starts_with(line, prefix))
-      continue;
-
-    line.erase(0, prefix.size());
-
-    const std::vector<std::string> directories = split(line, ':');
-    for(const std::string& dir : directories)
-    {
-      boost::system::error_code ec;
-      bfs::path path = bfs::canonical(dir, ec);
-      if ((bool)ec) {
-        LOG(warning) << "Unable to resolve " << dir;
-      } else {
-        paths.push_back(path);
-      }
-    }
-  }
-
-  c.wait();
-
-  return paths;
-}
-
-long long get_or_insert_artifact(Database2& db, const std::string& name, const std::string& type, const long long generating_command_id = -1)
-{
-  long long artifact_id = db.artifact_id_by_name(name);
-
-  if (artifact_id == -1) {
-    db.create_artifact(name, type, generating_command_id);
-    artifact_id = db.last_id();
-  }
-
-  return artifact_id;
-}
-
-void extract_dependencies(Database2& db) {
-  const std::vector<bfs::path> default_library_directories = load_default_library_directories();
-
-  auto stm = db.statement(R"(
-select commands.id, commands.directory, commands.executable, commands.args, artifacts.id, artifacts.name, artifacts.type
-from commands
-inner join artifacts on artifacts.generating_command_id = commands.id)");
-
-  while (stm.executeStep()) {
-    const long long command_id = stm.getColumn(0).getInt64();
-    const std::string directory = stm.getColumn(1).getString();
-    const std::string executable = stm.getColumn(2).getString();
-    const std::string args = stm.getColumn(3).getString();
-    const long long artifact_id = stm.getColumn(4).getInt64();
-    const std::string output = stm.getColumn(5).getString();
-    const std::string output_type = stm.getColumn(6).getString();
-
-    const CompilationCommandDependencies dependencies = parse_dependencies(directory, executable, args, default_library_directories);
-
-    LOG(info || !dependencies.errors.empty()) << termcolor::green << "Command #" << command_id << termcolor::reset
-                                              << " " << directory << " " << executable << " " << args;
-
-    for(const std::string& err : dependencies.errors) {
-      LOG(always) << termcolor::red << "Error: " << termcolor::reset << err;
-    }
-
-    LOG(debug) << termcolor::blue << ">" << termcolor::reset << " (" << output_type << ") " << artifact_id << " " << output;
-
-    for (const auto& dependency: dependencies.dependencies) {
-      const std::string dependency_type = get_input_type(dependency.string());
-      const long long dependency_id = get_or_insert_artifact(db, dependency.string(), dependency_type);
-      db.create_dependency(artifact_id, dependency_id);
-
-      LOG(debug) << termcolor::yellow << "<" << termcolor::reset << " (" << dependency_type << ") " << dependency_id << " " << dependency;
-    }
-  }
-}
 
 namespace {
 
@@ -121,8 +36,6 @@ struct SymbolExtractionStatus {
 bool has_failure(const SymbolExtractionStatus& status) {
   return status.linker_script || has_failure(status.processes);
 }
-
-} // anonymous namespace
 
 SymbolExtractionStatus extract_symbols_from_file(const std::string& usable_path, ArtifactSymbols& symbols) {
   SymbolExtractionStatus status;
@@ -235,6 +148,23 @@ public:
   void done() { processBuffer(); }
 };
 
+void log_dependencies(const CompilationCommand& cmd,
+                      const std::vector<Artifact>& dependencies,
+                      const std::vector<std::string>& errors) {
+  LOG(info || !errors.empty()) << termcolor::green << "Command #" << cmd.id << termcolor::reset
+                               << " " << cmd.directory << " " << cmd.executable << " " << cmd.args;
+
+  for(const std::string& err : errors) {
+    LOG(always) << termcolor::red << "Error: " << termcolor::reset << err;
+  }
+
+  LOG(debug) << termcolor::blue << ">" << termcolor::reset << " (" << cmd.output_type << ") " << cmd.artifact_id << " " << cmd.output;
+
+  for (const Artifact& dependency : dependencies) {
+    LOG(debug) << termcolor::yellow << "<" << termcolor::reset << " (" << dependency.type << ") " << dependency.id << " " << dependency.name;
+  }
+}
+
 } // anonymous namespace
 
 boost::program_options::options_description Extract_Task::options()
@@ -261,7 +191,7 @@ int Extract_Task::execute(const std::vector<std::string>& args)
   }
 
   if (vm.count("dependencies")) {
-    extract_dependencies(db());
+    extract_dependencies(db(), log_dependencies);
 
     LOGGER << termcolor::blue << "Status" << termcolor::reset;
     std::cout << db().count_artifacts() << " artifacts" << std::endl;

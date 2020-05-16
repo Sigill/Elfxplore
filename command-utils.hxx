@@ -9,12 +9,17 @@
 
 bool is_cc(const std::string& command);
 
-class CompilationCommand {
+class Command {
 public:
   long long id = -1;
   std::string directory;
   std::string executable;
   std::string args;
+};
+
+class CompilationCommand : public Command {
+public:
+  long long artifact_id = -1;
   std::string output;
   std::string output_type;
 
@@ -23,11 +28,17 @@ public:
 
 void parse_command(const std::string& line, CompilationCommand& command);
 
-class CompilationCommandDependencies {
+class Dependencies {
+public:
+  std::vector<std::string> files;
+  std::vector<std::string> errors;
+};
+
+class DependenciesResolver {
 public:
   std::vector<boost::filesystem::path> library_directories;
-  std::set<boost::filesystem::path> dependencies;
 
+  std::set<std::string> dependencies;
   std::vector<std::string> errors;
 
   void add_libraries_directory(const std::string& value);
@@ -36,9 +47,8 @@ public:
                               const std::vector<boost::filesystem::path>& default_library_directories);
 };
 
-CompilationCommandDependencies parse_dependencies(const boost::filesystem::path& directory,
-                                                  const std::string& executable,
-                                                  const std::string& args, const std::vector<boost::filesystem::path>& default_library_directories);
+Dependencies parse_dependencies(const CompilationCommand& cmd,
+                                const std::vector<boost::filesystem::path>& default_library_directories);
 
 std::string redirect_gcc_output(const CompilationCommand& command, const std::string& to = {});
 

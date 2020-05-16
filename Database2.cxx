@@ -46,6 +46,7 @@ where dependencies.dependee_id = ? and artifacts.type = "source")"))
   db.exec("PRAGMA page_size=65536;");
   db.exec("PRAGMA locking_mode=EXCLUSIVE;");
   db.exec("PRAGMA synchronous=OFF;");
+  db.exec("PRAGMA foreign_keys=ON;");
 
   create();
 }
@@ -64,7 +65,7 @@ create table if not exists "artifacts" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "name" VARCHAR(256) NOT NULL,
   "type" VARCHAR(16) NOT NULL,
-  "generating_command_id" INTEGER NOT NULL DEFAULT -1
+  "generating_command_id" INTEGER DEFAULT NULL REFERENCES "commands"
 );
 create unique index if not exists "unique_artifacts" on "artifacts" ("name");
 create index if not exists "artifact_by_type" on "artifacts" ("type");
@@ -72,8 +73,8 @@ create index if not exists "generated_artifacts" on "artifacts" ("generating_com
 
 create table if not exists "dependencies" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  "dependee_id" INTEGER NOT NULL,
-  "dependency_id" INTEGER NOT NULL
+  "dependee_id" INTEGER NOT NULL REFERENCES "artifacts",
+  "dependency_id" INTEGER NOT NULL REFERENCES "artifacts"
 );
 create unique index if not exists "unique_dependency" on "dependencies" ("dependee_id", "dependency_id");
 
@@ -87,8 +88,8 @@ create index if not exists "symbol_by_dname" on "symbols" ("dname");
 
 create table if not exists "symbol_references" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  "artifact_id" INTEGER NOT NULL,
-  "symbol_id" INTEGER NOT NULL,
+  "artifact_id" INTEGER NOT NULL REFERENCES "artifacts",
+  "symbol_id" INTEGER NOT NULL REFERENCES "symbols",
   "category" VARCHAR(16) NOT NULL,
   "type" VARCHAR(1) NOT NULL,
   "size" INTEGER DEFAULT NULL
@@ -168,7 +169,10 @@ void Database2::create_artifact(const std::string& name, const std::string& type
 
   stm.bind(1, name);
   stm.bind(2, type);
-  stm.bind(3, generating_command_id);
+  if (generating_command_id >= 0)
+    stm.bind(3, generating_command_id);
+  else
+    stm.bind(3);
   stm.exec();
   stm.reset();
   stm.clearBindings();

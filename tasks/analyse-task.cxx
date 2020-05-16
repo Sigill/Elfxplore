@@ -362,7 +362,7 @@ std::vector<long long> get_generated_shared_libs_and_executables(Database2& db, 
   ss << R"(
 select id
 from artifacts
-where generating_command_id != -1
+where generating_command_id is not NULL
 )";
 
   if (selection.empty()) {
@@ -491,12 +491,14 @@ where artifacts.type = "object"
   SQLite::Statement stm = db.statement(q);
 
   while(stm.executeStep()) {
-    commands.emplace_back(CompilationCommand{stm.getColumn(0).getInt64(),
-                                             stm.getColumn(1).getString(),
-                                             stm.getColumn(2).getString(),
-                                             stm.getColumn(3).getString(),
-                                             stm.getColumn(4).getString(),
-                                             {}});
+    CompilationCommand cmd;
+    cmd.id         = stm.getColumn(0).getInt64();
+    cmd.directory  = stm.getColumn(1).getString();
+    cmd.executable = stm.getColumn(2).getString();
+    cmd.args       = stm.getColumn(3).getString();
+    cmd.output     = stm.getColumn(4).getString();
+
+    commands.emplace_back(std::move(cmd));
   }
 
   return commands;
@@ -517,12 +519,14 @@ where artifacts.type in ("static", "shared", "executable")
   SQLite::Statement stm = db.statement(q);
 
   while(stm.executeStep()) {
-    commands.emplace_back(CompilationCommand{stm.getColumn(0).getInt64(),
-                                             stm.getColumn(1).getString(),
-                                             stm.getColumn(2).getString(),
-                                             stm.getColumn(3).getString(),
-                                             stm.getColumn(4).getString(),
-                                             {}});
+    CompilationCommand cmd;
+    cmd.id         = stm.getColumn(0).getInt64();
+    cmd.directory  = stm.getColumn(1).getString();
+    cmd.executable = stm.getColumn(2).getString();
+    cmd.args       = stm.getColumn(3).getString();
+    cmd.output     = stm.getColumn(4).getString();
+
+    commands.emplace_back(std::move(cmd));
   }
 
   return commands;

@@ -125,12 +125,13 @@ std::string locate_library(const std::string& name,
   return path;
 }
 
-void parse_cc_dependencies(const std::string& /*executable*/,
-                   const bfs::path& directory,
-                   const std::vector<std::string>& argv,
-                   const std::vector<bfs::path>& default_library_directories,
-                   CompilationCommandDependencies& cmd)
+Dependencies parse_cc_dependencies(const std::string& /*executable*/,
+                                   const bfs::path& directory,
+                                   const std::vector<std::string>& argv,
+                                   const std::vector<bfs::path>& default_library_directories)
 {
+  DependenciesResolver resolver;
+
   auto absolute = [&directory](const std::string& path) { return expand_path(path, directory); };
 
   bool openmp = false;
@@ -147,16 +148,16 @@ void parse_cc_dependencies(const std::string& /*executable*/,
       ++i;
     } else if (starts_with(arg, "-L")) {
       const std::string value = get_arg(argv, i);
-      try { cmd.library_directories.emplace_back(absolute(value)); }
-      catch (boost::filesystem::filesystem_error&) { cmd.errors.emplace_back("Invalid -L " + value); }
+      try { resolver.library_directories.emplace_back(absolute(value)); }
+      catch (boost::filesystem::filesystem_error&) { resolver.errors.emplace_back("Invalid -L " + value); }
     } else if (starts_with(arg, "-l")) {
-      cmd.locate_and_add_library(get_arg(argv, i), default_library_directories);
+      resolver.locate_and_add_library(get_arg(argv, i), default_library_directories);
     } else if (starts_with(arg, "-o")) {
       output_type = get_output_type(get_arg(argv, i));
     } else if (consume_arg(arg, "-isystem", i) || consume_arg(arg, "-I", i)) {
 
     } else {
-      cmd.dependencies.emplace(absolute(arg));
+      resolver.dependencies.emplace(absolute(arg).string());
     }
   }
 
@@ -173,16 +174,22 @@ void parse_cc_dependencies(const std::string& /*executable*/,
 //    locate_and_add_library("c", cmd);
 
     if (openmp) {
-      cmd.locate_and_add_library("gomp", default_library_directories);
-      cmd.locate_and_add_library("pthread", default_library_directories);
+      resolver.locate_and_add_library("gomp", default_library_directories);
+      resolver.locate_and_add_library("pthread", default_library_directories);
     }
   }
+
+  return {
+    {std::make_move_iterator(resolver.dependencies.begin()), std::make_move_iterator(resolver.dependencies.end())},
+    std::move(resolver.errors)
+  };
 }
 
-void parse_ar_dependencies(const bfs::path& directory,
-                   const std::vector<std::string>& argv,
-                   CompilationCommandDependencies& cmd)
+Dependencies parse_ar_dependencies(const bfs::path& directory,
+                                   const std::vector<std::string>& argv)
 {
+  DependenciesResolver resolver;
+
   auto absolute = [&directory](const std::string& path) { return expand_path(path, directory); };
 
   bool output_found = false;
@@ -194,16 +201,21 @@ void parse_ar_dependencies(const bfs::path& directory,
       if (!output_found)
         output_found = true;
       else
-        cmd.dependencies.emplace(absolute(arg));
+        resolver.dependencies.emplace(absolute(arg).string());
     } else if (ends_with(arg, ".o")) {
-      cmd.dependencies.emplace(absolute(arg));
+      resolver.dependencies.emplace(absolute(arg).string());
     }
   }
+
+  return {
+    {std::make_move_iterator(resolver.dependencies.begin()), std::make_move_iterator(resolver.dependencies.end())},
+    std::move(resolver.errors)
+  };
 }
 
 } // anonymous namespace
 
-void CompilationCommandDependencies::locate_and_add_library(const std::string& namespec,
+void DependenciesResolver::locate_and_add_library(const std::string& namespec,
                                                             const std::vector<bfs::path>& default_library_directories) {
   const std::string realpath = locate_library(namespec, default_library_directories, library_directories);
   if (realpath.empty()) {
@@ -213,24 +225,19 @@ void CompilationCommandDependencies::locate_and_add_library(const std::string& n
   }
 }
 
-CompilationCommandDependencies parse_dependencies(const boost::filesystem::path& directory,
-                                                  const std::string& executable,
-                                                  const std::string& args,
-                                                  const std::vector<bfs::path>& default_library_directories)
+
+Dependencies parse_dependencies(const CompilationCommand& cmd,
+                                const std::vector<boost::filesystem::path>& default_library_directories)
 {
-  const std::vector<std::string> argv = shellwords::shellsplit(args);
+  const std::vector<std::string> argv = shellwords::shellsplit(cmd.args);
 
-  CompilationCommandDependencies dependencies;
-
-  if (is_cc(executable)) {
-    parse_cc_dependencies(executable, directory, argv, default_library_directories, dependencies);
-  } else if (executable == "ar") {
-    parse_ar_dependencies(directory, argv, dependencies);
+  if (is_cc(cmd.executable)) {
+    return parse_cc_dependencies(cmd.executable, cmd.directory, argv, default_library_directories);
+  } else if (cmd.executable == "ar") {
+    return parse_ar_dependencies(cmd.directory, argv);
   } else {
-    throw std::runtime_error("Unknown executable: " + executable);
+    throw std::runtime_error("Unknown executable: " + cmd.executable);
   }
-
-  return dependencies;
 }
 
 std::string redirect_gcc_output(const CompilationCommand& command, const std::string& to) {

@@ -32,6 +32,14 @@ public:
   inline T * operator->() const { return get(); }
 };
 
+class Artifact {
+public:
+  long long id = -1;
+  std::string name;
+  std::string type;
+  long long generating_command_id = -1;
+};
+
 class Dependency {
 public:
   long long dependee_id, dependency_id;
