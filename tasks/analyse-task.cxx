@@ -17,7 +17,7 @@
 
 #include "infix_iterator.hxx"
 
-#include "Database2.hxx"
+#include "Database3.hxx"
 #include "query-utils.hxx"
 #include "utils.hxx"
 #include "command-utils.hxx"

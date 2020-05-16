@@ -1,15 +1,20 @@
 #include "database-utils.hxx"
 
 #include <fstream>
+#include <chrono>
+
+#include <omp.h>
 
 #include <boost/filesystem/path.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/process.hpp>
 
 #include "Database2.hxx"
+#include "logger.hxx"
 #include "command-utils.hxx"
 #include "utils.hxx"
-#include "logger.hxx"
+#include "nm.hxx"
+#include "ArtifactSymbols.hxx"
 
 namespace bfs = boost::filesystem;
 namespace bp = boost::process;
@@ -91,6 +96,101 @@ long long get_or_insert_artifact(Database2& db, const std::string& name, const s
   return artifact_id;
 }
 
+void extract_symbols_from_file(const Artifact& artifact, SymbolExtractionStatus& status) {
+  const std::string& usable_path = artifact.name;
+  const bool is_dynamic = artifact.type == "shared";
+
+  std::ifstream file(usable_path, std::ios::in | std::ios::binary);
+  char magic[4] = {0, 0, 0, 0};
+  file.read(magic, 4);
+  file.close();
+  status.linker_script = !(magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F');
+
+  if (!status.linker_script) {
+    ArtifactSymbols& symbols = status.symbols;
+
+    status.processes.emplace_back(nm_undefined(usable_path, symbols.undefined, symbol_table::normal));
+    if (is_dynamic && symbols.undefined.empty())
+      status.processes.emplace_back(nm_undefined(usable_path, symbols.undefined, symbol_table::dynamic));
+
+    status.processes.emplace_back(nm_defined_extern(usable_path, symbols.external, symbol_table::normal));
+    if (is_dynamic && symbols.external.empty())
+      status.processes.emplace_back(nm_defined_extern(usable_path, symbols.external, symbol_table::dynamic));
+
+    status.processes.emplace_back(nm_defined(usable_path, symbols.external, symbol_table::normal));
+    if (is_dynamic && symbols.external.empty())
+      status.processes.emplace_back(nm_defined(usable_path, symbols.external, symbol_table::dynamic));
+
+    substract_set(symbols.internal, symbols.external);
+  }
+}
+
+void clear(SymbolExtractionStatus& status) {
+  status.symbols.undefined.clear();
+  status.symbols.external.clear();
+  status.symbols.internal.clear();
+  status.linker_script = false;
+  status.processes.clear();
+}
+
+class SymbolExtractor {
+private:
+  Database2& db;
+  std::vector<SymbolExtractionStatus> extraction_status_pool;
+  std::function<void(const Artifact&, const SymbolExtractionStatus&)> notify;
+
+public:
+  explicit SymbolExtractor(Database2& db, std::function<void(const Artifact&, const SymbolExtractionStatus&)> notify)
+    : db(db), extraction_status_pool(), notify(notify) {}
+
+  void insert_symbols(const Artifact& artifact,
+                      const SymbolExtractionStatus& status) {
+    db.insert_symbol_references(artifact.id, status.symbols);
+
+    if (notify)
+      notify(artifact, status);
+  }
+
+  void operator()(const std::vector<Artifact>& files) {
+    extraction_status_pool.resize(files.size());
+
+#pragma omp parallel for
+    for(size_t i = 0; i < files.size(); ++i) {
+      clear(extraction_status_pool[i]);
+
+      extract_symbols_from_file(files[i], extraction_status_pool[i]);
+#pragma omp critical
+      insert_symbols(files[i], extraction_status_pool[i]);
+    }
+  }
+};
+
+template<typename T>
+class BufferedTasks {
+private:
+  std::vector<T> buffer;
+  size_t capacity;
+  std::function<void(const std::vector<T>&)> process;
+
+public:
+  BufferedTasks(size_t N, std::function<void(const std::vector<T>&)> processor) : buffer(), capacity(N), process(processor) {
+    buffer.reserve(N);
+  }
+
+  void processBuffer() {
+    process(buffer);
+    buffer.clear();
+  }
+
+  void push(T t) {
+    buffer.emplace_back(std::move(t));
+    if (buffer.size() == capacity)
+      processBuffer();
+  }
+
+  void done() { processBuffer(); }
+};
+
 } // anonymous namespace
 
 void import_command(Database2& db,
@@ -115,7 +215,12 @@ void import_commands(Database2& db,
 }
 
 void extract_dependencies(Database2& db,
-                          const std::function<DependenciesCallback>& notify) {
+                          const std::function<DependenciesNotifier>& notify) {
+  const long long date_import_commands = db.get_timestamp("import-commands");
+  const long long date_extract_dependencies = db.get_timestamp("extract-dependencies");
+  if (date_extract_dependencies > date_import_commands)
+    return;
+
   const std::vector<bfs::path> default_library_directories = load_default_library_directories();
 
   auto stm = db.statement(R"(
@@ -151,4 +256,32 @@ inner join artifacts on artifacts.generating_command_id = commands.id)");
     if (notify)
       notify(cmd, artifacts, dependencies.errors);
   }
+
+  db.set_timestamp("extract-dependencies",
+                   std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count());
+}
+
+bool has_failure(const std::vector<ProcessResult>& processes) {
+  return std::any_of(processes.begin(), processes.end(), failed);
+}
+
+bool has_failure(const SymbolExtractionStatus& status) {
+  return status.linker_script || has_failure(status.processes);
+}
+
+void extract_symbols(Database2& db,
+                     const std::function<void(const Artifact&, const SymbolExtractionStatus&)>& notify)
+{
+  BufferedTasks<Artifact> tasks(64, SymbolExtractor(db, notify));
+
+  auto q = db.statement("select id, name, type from artifacts where type not in (\"source\", \"static\")");
+  while (q.executeStep()) {
+    Artifact artifact;
+    artifact.id = q.getColumn(0).getInt64();
+    artifact.name = q.getColumn(1).getString();
+    artifact.type = q.getColumn(2).getString();
+    tasks.push(std::move(artifact));
+  }
+
+  tasks.done();
 }

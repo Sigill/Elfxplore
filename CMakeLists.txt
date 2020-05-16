@@ -41,6 +41,7 @@ target_link_libraries(elfxplore-core
 
 add_executable(elfxplore
     progressbar.cxx
+    Database3.cxx
     task.cxx
     tasks/db-task.cxx
     tasks/extract-task.cxx

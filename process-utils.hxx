@@ -9,4 +9,9 @@ struct ProcessResult {
   char code = -1;
 };
 
+inline bool failed(const ProcessResult& process)
+{
+  return process.code != 0 || !process.err.empty();
+}
+
 #endif // PROCESSUTILS_HXX

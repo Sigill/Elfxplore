@@ -16,7 +16,7 @@
 
 #include <SQLiteCpp/Statement.h>
 
-#include "Database2.hxx"
+#include "Database3.hxx"
 #include "infix_iterator.hxx"
 #include "query-utils.hxx"
 

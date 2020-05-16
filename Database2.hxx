@@ -153,6 +153,10 @@ public:
 
   std::map<long long, std::vector<std::string>> resolve_symbols(const std::vector<long long>& symbols);
 
+  long long get_timestamp(const std::string& name);
+
+  void set_timestamp(const std::string& name, const long long time);
+
   static long long get_id(SQLite::Statement& stm);
   static std::vector<long long> get_ids(SQLite::Statement& stm);
 

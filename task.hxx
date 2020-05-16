@@ -8,7 +8,7 @@
 
 #include <boost/program_options/options_description.hpp>
 
-class Database2;
+class Database3;
 
 enum TaskStatus {
   ERROR = -2,
@@ -20,7 +20,7 @@ class Task
 {
 private:
   bool mDryRun = true;
-  std::shared_ptr<Database2> mDB;
+  std::shared_ptr<Database3> mDB;
 
 public:
   Task();
@@ -29,13 +29,13 @@ public:
   virtual int execute(const std::vector<std::string>& args) = 0;
 
   void set_dryrun(bool b) { mDryRun = b; }
-  void set_database(std::shared_ptr<Database2> db) { std::swap(db, mDB); }
+  void set_database(std::shared_ptr<Database3> db) { std::swap(db, mDB); }
 
   virtual boost::program_options::options_description options() = 0;
 
 protected:
   bool dryrun() const { return mDryRun; }
-  Database2& db() { return *mDB; }
+  Database3& db() { return *mDB; }
 };
 
 #endif // COMMAND_HXX

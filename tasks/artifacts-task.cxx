@@ -2,7 +2,7 @@
 
 #include <iostream>
 
-#include "Database2.hxx"
+#include "Database3.hxx"
 #include "query-utils.hxx"
 
 #include <boost/program_options.hpp>

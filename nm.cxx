@@ -86,11 +86,6 @@ ProcessResult nm(const std::string& file, SymbolReferenceSet& symbols, const std
   return process;
 }
 
-bool failed(const ProcessResult& process)
-{
-  return process.code != 0 || !process.err.empty();
-}
-
 //std::vector<ProcessResult> nm(const std::string& file, SymbolReferenceSet& symbols, const std::string& options)
 //{
 //  std::vector<ProcessResult> processes;

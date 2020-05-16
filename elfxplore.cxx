@@ -6,6 +6,7 @@
 #include <memory>
 #include <functional>
 #include <fstream>
+#include <chrono>
 
 #include <boost/program_options.hpp>
 
@@ -14,7 +15,7 @@
 #include <SQLiteCpp/Transaction.h>
 
 #include "logger.hxx"
-#include "Database2.hxx"
+#include "Database3.hxx"
 #include "command-utils.hxx"
 #include "database-utils.hxx"
 #include "utils.hxx"
@@ -196,7 +197,7 @@ int main(int argc, char** argv)
     return 0;
   }
 
-  auto db = std::make_shared<Database2>(storage);
+  auto db = std::make_shared<Database3>(storage);
 
   SQLite::Transaction transaction(db->database());
 
@@ -214,6 +215,9 @@ int main(int argc, char** argv)
   for(const auto& type : db->count_artifacts_by_type()) {
     LOGGER << "\t" << type.second << " " << type.first;
   }
+
+  db->set_timestamp("import-commands",
+                    std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count());
 
   task->set_dryrun(dryrun);
   task->set_database(db);

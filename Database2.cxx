@@ -98,6 +98,12 @@ create index if not exists "symbol_reference_by_artifact" on "symbol_references"
 create index if not exists "symbol_reference_by_symbol" on "symbol_references" ("symbol_id");
 create index if not exists "symbol_reference_by_category" on "symbol_references" ("category");
 create index if not exists "symbol_reference_by_type" on "symbol_references" ("type");
+
+create table if not exists "timestamps" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "name" VARCHAR(16) UNIQUE NOT NULL,
+  "time" INTEGER NOT NULL
+);
 )";
 
   db.exec(queries);
@@ -442,4 +448,26 @@ std::map<long long, std::vector<std::string> > Database2::resolve_symbols(const 
   }
 
   return symbol_locations;
+}
+
+long long Database2::get_timestamp(const std::string& name)
+{
+  long long time = 0L;
+
+  auto stm = statement("select time from timestamps where name = ?");
+  stm.bind(1, name);
+  while(stm.executeStep()) {
+    time = stm.getColumn(0).getInt64();
+  }
+
+  return time;
+}
+
+void Database2::set_timestamp(const std::string& name, const long long time)
+{
+  auto stm = statement("insert into timestamps (name, time) values (?, ?) on conflict (name) do update set time=excluded.time");
+
+  stm.bind(1, name);
+  stm.bind(2, time);
+  stm.exec();
 }
