@@ -201,23 +201,28 @@ int main(int argc, char** argv)
 
   SQLite::Transaction transaction(db->database());
 
-  for(const std::string& command : compilation_commands) {
-    if (command == "-") {
-      import_commands(*db, std::cin, log_command);
-    } else {
-      std::ifstream in(command);
-      import_commands(*db, in, log_command);
+  if (!compilation_commands.empty())
+  {
+    LOG(always) << "Importing commands";
+
+    for(const std::string& command : compilation_commands) {
+      if (command == "-") {
+        import_commands(*db, std::cin, log_command);
+      } else {
+        std::ifstream in(command);
+        import_commands(*db, in, log_command);
+      }
     }
-  }
 
-  LOGGER << termcolor::blue << "Status" << termcolor::reset;
-  LOGGER << db->count_artifacts() << " artifacts";
-  for(const auto& type : db->count_artifacts_by_type()) {
-    LOGGER << "\t" << type.second << " " << type.first;
-  }
+    LOGGER << termcolor::blue << "Status" << termcolor::reset;
+    LOGGER << db->count_artifacts() << " artifacts";
+    for(const auto& type : db->count_artifacts_by_type()) {
+      LOGGER << "\t" << type.second << " " << type.first;
+    }
 
-  db->set_timestamp("import-commands",
-                    std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count());
+    db->set_timestamp("import-commands",
+                      std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count());
+  }
 
   task->set_dryrun(dryrun);
   task->set_database(db);

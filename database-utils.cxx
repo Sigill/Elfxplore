@@ -2,7 +2,6 @@
 
 #include <fstream>
 #include <chrono>
-
 #include <omp.h>
 
 #include <boost/filesystem/path.hpp>
@@ -125,72 +124,6 @@ void extract_symbols_from_file(const Artifact& artifact, SymbolExtractionStatus&
   }
 }
 
-void clear(SymbolExtractionStatus& status) {
-  status.symbols.undefined.clear();
-  status.symbols.external.clear();
-  status.symbols.internal.clear();
-  status.linker_script = false;
-  status.processes.clear();
-}
-
-class SymbolExtractor {
-private:
-  Database2& db;
-  std::vector<SymbolExtractionStatus> extraction_status_pool;
-  std::function<void(const Artifact&, const SymbolExtractionStatus&)> notify;
-
-public:
-  explicit SymbolExtractor(Database2& db, std::function<void(const Artifact&, const SymbolExtractionStatus&)> notify)
-    : db(db), extraction_status_pool(), notify(notify) {}
-
-  void insert_symbols(const Artifact& artifact,
-                      const SymbolExtractionStatus& status) {
-    db.insert_symbol_references(artifact.id, status.symbols);
-
-    if (notify)
-      notify(artifact, status);
-  }
-
-  void operator()(const std::vector<Artifact>& files) {
-    extraction_status_pool.resize(files.size());
-
-#pragma omp parallel for
-    for(size_t i = 0; i < files.size(); ++i) {
-      clear(extraction_status_pool[i]);
-
-      extract_symbols_from_file(files[i], extraction_status_pool[i]);
-#pragma omp critical
-      insert_symbols(files[i], extraction_status_pool[i]);
-    }
-  }
-};
-
-template<typename T>
-class BufferedTasks {
-private:
-  std::vector<T> buffer;
-  size_t capacity;
-  std::function<void(const std::vector<T>&)> process;
-
-public:
-  BufferedTasks(size_t N, std::function<void(const std::vector<T>&)> processor) : buffer(), capacity(N), process(processor) {
-    buffer.reserve(N);
-  }
-
-  void processBuffer() {
-    process(buffer);
-    buffer.clear();
-  }
-
-  void push(T t) {
-    buffer.emplace_back(std::move(t));
-    if (buffer.size() == capacity)
-      processBuffer();
-  }
-
-  void done() { processBuffer(); }
-};
-
 } // anonymous namespace
 
 void import_command(Database2& db,
@@ -214,14 +147,13 @@ void import_commands(Database2& db,
   }
 }
 
-void extract_dependencies(Database2& db,
-                          const std::function<DependenciesNotifier>& notify) {
-  const long long date_import_commands = db.get_timestamp("import-commands");
-  const long long date_extract_dependencies = db.get_timestamp("extract-dependencies");
-  if (date_extract_dependencies > date_import_commands)
-    return;
-
+void DependenciesExtractor::run(Database2& db)
+{
   const std::vector<bfs::path> default_library_directories = load_default_library_directories();
+
+  auto cq = db.statement("select count(*) from commands");
+  if (notifyTotalSteps)
+    notifyTotalSteps(db.get_id(cq));
 
   auto stm = db.statement(R"(
 select commands.id, commands.directory, commands.executable, commands.args, artifacts.id, artifacts.name, artifacts.type
@@ -253,12 +185,9 @@ inner join artifacts on artifacts.generating_command_id = commands.id)");
       db.create_dependency(cmd.artifact_id, dependency_artifact.id);
     }
 
-    if (notify)
-      notify(cmd, artifacts, dependencies.errors);
+    if (notifyStep)
+      notifyStep(cmd, artifacts, dependencies.errors);
   }
-
-  db.set_timestamp("extract-dependencies",
-                   std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count());
 }
 
 bool has_failure(const std::vector<ProcessResult>& processes) {
@@ -269,19 +198,33 @@ bool has_failure(const SymbolExtractionStatus& status) {
   return status.linker_script || has_failure(status.processes);
 }
 
-void extract_symbols(Database2& db,
-                     const std::function<void(const Artifact&, const SymbolExtractionStatus&)>& notify)
+void SymbolExtractor::run(Database2& db)
 {
-  BufferedTasks<Artifact> tasks(64, SymbolExtractor(db, notify));
-
   auto q = db.statement("select id, name, type from artifacts where type not in (\"source\", \"static\")");
+
+  auto cq = db.statement("select count(*) from artifacts where type not in (\"source\", \"static\")");
+  if (notifyTotalSteps)
+    notifyTotalSteps(db.get_id(cq));
+
+#pragma omp parallel
+#pragma omp single
   while (q.executeStep()) {
     Artifact artifact;
-    artifact.id = q.getColumn(0).getInt64();
-    artifact.name = q.getColumn(1).getString();
-    artifact.type = q.getColumn(2).getString();
-    tasks.push(std::move(artifact));
-  }
+    artifact.id   = q.getColumn(0).getInt64();
+    artifact.name = q.getColumn(1).getText();
+    artifact.type = q.getColumn(2).getText();
 
-  tasks.done();
+#pragma omp task firstprivate(artifact)
+    {
+      SymbolExtractionStatus status;
+      extract_symbols_from_file(artifact, status);
+#pragma omp critical
+      {
+        db.insert_symbol_references(artifact.id, status.symbols);
+
+        if (notifyStep)
+          notifyStep(artifact, status);
+      }
+    }
+  }
 }

@@ -392,6 +392,8 @@ int Dependencies_Task::execute(const std::vector<std::string>& args)
 
   std::set<Dependency> dependencies;
 
+  db().load_dependencies();
+
   if (vm.count("artifact") == 0) {
     get_all_dependencies(db(), included_types, excluded_types, dependencies);
   } else {

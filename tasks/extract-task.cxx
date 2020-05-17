@@ -52,13 +52,6 @@ int Extract_Task::execute(const std::vector<std::string>& args)
 
   if (vm.count("dependencies")) {
     db().load_dependencies();
-
-    LOGGER << termcolor::blue << "Status" << termcolor::reset;
-    std::cout << db().count_artifacts() << " artifacts" << std::endl;
-    for(const auto& type : db().count_artifacts_by_type()) {
-      LOGGER << "\t" << type.second << " " << type.first;
-    }
-    std::cout << db().count_dependencies() << " dependencies" << std::endl;
   }
 
   if (vm.count("symbols")) {

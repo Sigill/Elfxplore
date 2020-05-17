@@ -24,8 +24,12 @@ void import_commands(Database2& db,
 
 using DependenciesNotifier = void(const CompilationCommand&, const std::vector<Artifact>&, const std::vector<std::string>&);
 
-void extract_dependencies(Database2& db,
-                          const std::function<DependenciesNotifier>& notify);
+class DependenciesExtractor {
+public:
+  std::function<void(const size_t)> notifyTotalSteps;
+  std::function<DependenciesNotifier> notifyStep;
+  void run(Database2& db);
+};
 
 struct SymbolExtractionStatus {
   std::vector<ProcessResult> processes;
@@ -37,7 +41,11 @@ bool has_failure(const std::vector<ProcessResult>& processes);
 
 bool has_failure(const SymbolExtractionStatus& status);
 
-void extract_symbols(Database2& db,
-                     const std::function<void(const Artifact&, const SymbolExtractionStatus&)>& notify);
+class SymbolExtractor {
+public:
+  std::function<void(const size_t)> notifyTotalSteps;
+  std::function<void(const Artifact&, const SymbolExtractionStatus&)> notifyStep;
+  void run(Database2& db);
+};
 
 #endif // DATABASEUTILS_HXX

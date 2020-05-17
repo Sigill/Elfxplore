@@ -893,15 +893,21 @@ int Analyse_Task::execute(const std::vector<std::string>& args)
   }
 
   if (vm.count("duplicated-symbols")) {
+    db().load_symbols();
+
     analyse_duplicated_symbols(db(),
                                vm["type"].as<std::vector<std::string>>(),
                                vm["not-type"].as<std::vector<std::string>>(),
                                vm["category"].as<std::vector<std::string>>(),
                                vm["not-category"].as<std::vector<std::string>>());
   } else if (vm.count("undefined-symbols")) {
+    db().load_symbols();
+
     const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db(), vm["artifact"].as<std::vector<std::string>>());
     analyse_undefined_symbols(db(), artifacts);
   } else if (vm.count("useless-dependencies")) {
+    db().load_dependencies();
+
     const auto mode = vm["useless-dependencies"].as<useless_dependencies_analysis_modes>();
     const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db(), vm["artifact"].as<std::vector<std::string>>());
 
