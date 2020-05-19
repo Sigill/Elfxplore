@@ -26,7 +26,7 @@ public:
   bool is_complete() const;
 };
 
-void parse_command(const std::string& line, CompilationCommand& command);
+void parse_command(const std::string& line, CompilationCommand& command, const bool with_directory = true);
 
 class Dependencies {
 public:

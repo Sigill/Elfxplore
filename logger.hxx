@@ -72,7 +72,7 @@ inline bool log_enabled(const ::logger::severity_level lvl) {
 
 #define LOG_ENABLED(lvl) ::logger::log_enabled(::logger::severity_level::lvl)
 
-#define SLOGGER std::cout
+#define SLOGGER std::cerr
 
 #define LOGGER ::logger::EndlStream(SLOGGER)
 

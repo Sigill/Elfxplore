@@ -7,6 +7,8 @@
 #include <boost/filesystem/path.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/process.hpp>
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/json_parser.hpp>
 
 #include "Database2.hxx"
 #include "logger.hxx"
@@ -17,6 +19,7 @@
 
 namespace bfs = boost::filesystem;
 namespace bp = boost::process;
+namespace pt = boost::property_tree;
 
 namespace {
 
@@ -32,20 +35,16 @@ void clear(CompilationCommand& cmd)
 
 void import_command(Database2& db,
                     const std::string& line,
-                    const std::function<void (const std::string&, const CompilationCommand&)>& notify,
-                    CompilationCommand& cmd)
+                    const CompilationCommand& cmd,
+                    const std::function<void (const std::string&, const CompilationCommand&)>& notify)
 {
-  parse_command(line, cmd);
-
   notify(line, cmd);
 
   if (cmd.is_complete()) {
     const long long command_id = db.create_command(cmd.directory, cmd.executable, cmd.args);
 
-    const bfs::path output = expand_path(cmd.output, cmd.directory);
-
-    if (-1 == db.artifact_id_by_name(output.string())) {
-      db.create_artifact(output.string(), cmd.output_type, command_id);
+    if (-1 == db.artifact_id_by_name(cmd.output)) {
+      db.create_artifact(cmd.output, cmd.output_type, command_id);
     }
   }
 }
@@ -131,7 +130,8 @@ void import_command(Database2& db,
                     const std::function<void (const std::string&, const CompilationCommand&)>& notify)
 {
   CompilationCommand cmd;
-  import_command(db, line, notify, cmd);
+  parse_command(line, cmd);
+  import_command(db, line, cmd, notify);
 }
 
 void import_commands(Database2& db,
@@ -143,7 +143,29 @@ void import_commands(Database2& db,
 
   while (std::getline(in, line) && !line.empty()) {
     clear(cmd);
-    import_command(db, line, notify, cmd);
+    parse_command(line, cmd);
+    import_command(db, line, cmd, notify);
+  }
+}
+
+void import_compile_commands(Database2& db,
+                             std::istream& in,
+                             const std::function<void (const std::string&, const CompilationCommand&)>& notify)
+{
+  pt::ptree tree;
+  pt::read_json(in, tree);
+
+  CompilationCommand cmd;
+
+  for(const pt::ptree::value_type& entry : tree) {
+    clear(cmd);
+
+    const auto& data = entry.second;
+    cmd.directory = data.get_child("directory").data();
+    const std::string line = data.get_child("command").data();
+    parse_command(line, cmd, false);
+
+    import_command(db, line, cmd, notify);
   }
 }
 

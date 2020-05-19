@@ -5,8 +5,6 @@
 #include <vector>
 #include <memory>
 #include <functional>
-#include <fstream>
-#include <chrono>
 
 #include <boost/program_options.hpp>
 
@@ -74,28 +72,6 @@ void usage(std::ostream& out,
   out << task_options;
 }
 
-void log_command(const std::string& line, const CompilationCommand& command) {
-  LOG(info || !command.is_complete())
-      << termcolor::green << "Processing command " << termcolor::reset << line;
-
-  if (command.directory.empty() || command.executable.empty() || command.args.empty()) {
-    LOG(always) << termcolor::red << "Error: not enough arguments" << termcolor::reset;
-    return;
-  }
-
-  if (command.output.empty()) {
-    LOG(always) << termcolor::red << "Error: no output identified" << termcolor::reset;
-    return;
-  }
-
-  if (command.output_type.empty()) {
-    LOG(debug) << "Output type: " << command.output_type;
-  }
-
-  LOG(info) << termcolor::blue << "Directory: " << termcolor::reset << command.directory;
-  LOG(info) << termcolor::blue << "Output: "  << termcolor::reset << "(" << command.output_type << ") " << command.output;
-}
-
 } // anonymous namespace
 
 namespace bpo = boost::program_options;
@@ -135,8 +111,8 @@ int main(int argc, char** argv)
 
   bool dryrun = false;
   std::string storage;
-  std::vector<std::string> compilation_databases;
-  std::vector<std::string> compilation_commands;
+  std::vector<std::string> compile_commands;
+  std::vector<std::string> line_commands;
 
   bpo::options_description opts("Common options");
   opts.add_options()
@@ -148,12 +124,12 @@ int main(int argc, char** argv)
       ("dry-run,n",
        bpo::bool_switch(&dryrun),
        "Do not write anything to the database.")
-      ("compilation-database",
-       bpo::value<std::vector<std::string>>(&compilation_databases)->multitoken()->value_name("files")->implicit_value({"-"}, "-"),
+      ("compile-commands",
+       bpo::value<std::vector<std::string>>(&compile_commands)->multitoken()->value_name("files")->implicit_value({"-"}, "-"),
        "List of the commands used to generate the project. "
        "This file can also include link commands used to generate libraries & executables.")
-      ("compilation-commands",
-       bpo::value<std::vector<std::string>>(&compilation_commands)->multitoken()->value_name("files")->implicit_value({"-"}, "-"),
+      ("commands",
+       bpo::value<std::vector<std::string>>(&line_commands)->multitoken()->value_name("files")->implicit_value({"-"}, "-"),
        "List of the commands used to generate the project. "
        "This file can also include link commands used to generate libraries & executables.")
       ("storage",
@@ -201,27 +177,9 @@ int main(int argc, char** argv)
 
   SQLite::Transaction transaction(db->database());
 
-  if (!compilation_commands.empty())
+  if (!line_commands.empty() || !compile_commands.empty())
   {
-    LOG(always) << "Importing commands";
-
-    for(const std::string& command : compilation_commands) {
-      if (command == "-") {
-        import_commands(*db, std::cin, log_command);
-      } else {
-        std::ifstream in(command);
-        import_commands(*db, in, log_command);
-      }
-    }
-
-    LOGGER << termcolor::blue << "Status" << termcolor::reset;
-    LOGGER << db->count_artifacts() << " artifacts";
-    for(const auto& type : db->count_artifacts_by_type()) {
-      LOGGER << "\t" << type.second << " " << type.first;
-    }
-
-    db->set_timestamp("import-commands",
-                      std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count());
+    db->load_commands(line_commands, compile_commands);
   }
 
   task->set_dryrun(dryrun);

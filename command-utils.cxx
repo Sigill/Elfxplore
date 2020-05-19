@@ -39,14 +39,20 @@ const std::vector<std::string> gcc_commands = {"cc", "c++", "gcc", "g++"};
 } // anonymous namespace
 
 bool is_cc(const std::string& command) {
-  return std::find(gcc_commands.begin(), gcc_commands.end(), command) != gcc_commands.end();
+  return std::any_of(gcc_commands.begin(), gcc_commands.end(), [&command](const std::string& suffix){
+    return ends_with(command, suffix);
+  });
 }
 
-void parse_command(const std::string& line, CompilationCommand& command)
+bool is_ar(const std::string& command) {
+  return ends_with(command, "ar");
+}
+
+void parse_command(const std::string& line, CompilationCommand& command, const bool with_directory)
 {
   shellwords::shell_splitter splitter(line.begin(), line.end());
 
-  if (splitter.read_next()) {
+  if (with_directory && splitter.read_next()) {
     command.directory = splitter.arg();
   }
 
@@ -56,14 +62,18 @@ void parse_command(const std::string& line, CompilationCommand& command)
 
   command.args = std::string(splitter.suffix(), line.end());
 
-  if (is_cc(command.executable)) {
+  const std::string executable = bfs::path(command.executable).filename().string();
+
+  if (is_cc(executable)) {
     parse_cc_args(splitter, command);
-  } else if (command.executable == "ar") {
+  } else if (is_ar(executable)) {
     parse_ar_args(splitter, command);
   }
 
-  if (!command.output.empty())
+  if (!command.output.empty()) {
+    command.output = expand_path(command.output, command.directory).string();
     command.output_type = get_output_type(command.output);
+  }
 }
 
 bool CompilationCommand::is_complete() const
@@ -233,7 +243,7 @@ Dependencies parse_dependencies(const CompilationCommand& cmd,
 
   if (is_cc(cmd.executable)) {
     return parse_cc_dependencies(cmd.executable, cmd.directory, argv, default_library_directories);
-  } else if (cmd.executable == "ar") {
+  } else if (is_ar(cmd.executable)) {
     return parse_ar_dependencies(cmd.directory, argv);
   } else {
     throw std::runtime_error("Unknown executable: " + cmd.executable);

@@ -2,6 +2,6 @@
 
 namespace logger {
 
-severity_level _severity_level = fatal;
+severity_level _severity_level = info;
 
 } // namespace logger
