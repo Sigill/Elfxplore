@@ -7,7 +7,8 @@ class ProgressBar
 {
 private:
   size_t mExpectedCount, mCount;
-  std::chrono::system_clock::time_point mStart;
+  std::chrono::system_clock::time_point mStart, mNextUpdate;
+  bool mEnabled;
 
 public:
   ProgressBar();
