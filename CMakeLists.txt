@@ -14,15 +14,29 @@ find_package(Linemarkers 0.1 REQUIRED)
 include(ExternalProject)
 
 ExternalProject_Add(termcolor_project
-  GIT_REPOSITORY git://github.com/ikalnytskyi/termcolor.git
-  GIT_TAG v1.0.1
+    GIT_REPOSITORY git://github.com/ikalnytskyi/termcolor.git
+    GIT_TAG v1.0.1
 
-  # Termcolor is a header-only library which means we need to
-  # neither configure nor build nor install it. Thus, noop
-  # the hooks.
-  CONFIGURE_COMMAND "" BUILD_COMMAND "" INSTALL_COMMAND "")
+    # Termcolor is a header-only library which means we need to
+    # neither configure nor build nor install it. Thus, noop
+    # the hooks.
+    CONFIGURE_COMMAND "" BUILD_COMMAND "" INSTALL_COMMAND "")
 ExternalProject_Get_Property(termcolor_project SOURCE_DIR)
 set(TERMCOLOR_INCLUDE_DIR ${SOURCE_DIR}/include)
+
+option(ENABLE_INSTRUMENTATION "Enable internal log messages" OFF)
+if(ENABLE_INSTRUMENTATION)
+    set(INTELSEAPI_ROOT "" CACHE PATH "Root directory of IntelSEAPI")
+
+    add_library(ittnotify STATIC IMPORTED)
+
+    set_target_properties(ittnotify PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${INTELSEAPI_ROOT}/include"
+        IMPORTED_LINK_INTERFACE_LIBRARIES "pthread;dl"
+        IMPORTED_LOCATION "${INTELSEAPI_ROOT}/lib/libittnotify64.a"
+        INTERFACE_COMPILE_DEFINITIONS ENABLE_INSTRUMENTATION
+        )
+endif()
 
 add_library(elfxplore-core STATIC
     logger.cxx
@@ -38,6 +52,9 @@ target_include_directories(elfxplore-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(elfxplore-core
     PUBLIC SQLiteCpp Boost::system Boost::program_options Boost::filesystem
     PRIVATE SQLite::SQLite3 Threads::Threads OpenMP::OpenMP_CXX shellwords)
+if (ENABLE_INSTRUMENTATION)
+    target_link_libraries(elfxplore-core PRIVATE ittnotify)
+endif()
 
 add_executable(elfxplore
     progressbar.cxx
@@ -50,7 +67,12 @@ add_executable(elfxplore
     tasks/artifacts-task.cxx
     elfxplore.cxx)
 target_include_directories(elfxplore PRIVATE ${TERMCOLOR_INCLUDE_DIR})
-target_link_libraries(elfxplore PRIVATE elfxplore-core Boost::system Boost::program_options Boost::filesystem Threads::Threads SQLiteCpp OpenMP::OpenMP_CXX shellwords linemarkers)
+target_link_libraries(elfxplore
+    PRIVATE elfxplore-core Boost::system Boost::program_options Boost::filesystem
+            Threads::Threads SQLiteCpp OpenMP::OpenMP_CXX shellwords linemarkers)
+if (ENABLE_INSTRUMENTATION)
+    target_link_libraries(elfxplore PRIVATE ittnotify)
+endif()
 
 include(CTest)
 

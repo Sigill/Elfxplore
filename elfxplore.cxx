@@ -12,6 +12,8 @@
 
 #include <SQLiteCpp/Transaction.h>
 
+//#include <minitrace.h>
+
 #include "logger.hxx"
 #include "Database3.hxx"
 #include "command-utils.hxx"
@@ -107,6 +109,8 @@ void validate(boost::any& v,
 
 int main(int argc, char** argv)
 {
+//  mtr_init("trace.json");
+
   std::vector<std::string> args = {argv[0]};
 
   bool dryrun = false;
@@ -199,6 +203,8 @@ int main(int argc, char** argv)
   if (status == WRONG_ARGS) {
     usage(std::cerr, args, opts, task->options());
   }
+
+//  mtr_shutdown();
 
   return status;
 }
