@@ -10,6 +10,7 @@
 
 #include "utils.hxx"
 #include "instrumentation.hxx"
+#include "ThreadPool.h"
 
 namespace bp = boost::process;
 
@@ -84,18 +85,6 @@ ProcessResult nm(const std::string& file, SymbolReferenceSet& symbols, const std
   return process;
 }
 
-//std::vector<ProcessResult> nm(const std::string& file, SymbolReferenceSet& symbols, const std::string& options)
-//{
-//  std::vector<ProcessResult> processes;
-
-//  processes.emplace_back(nm_once(file, symbols, options));
-
-//  if (symbols.empty())
-//    processes.emplace_back(nm_once(file, symbols, options + " -D"));
-
-//  return processes;
-//}
-
 ProcessResult  nm_undefined(const std::string& file, SymbolReferenceSet& symbols, const symbol_table st) {
   if (st == symbol_table::normal)
     return nm(file, symbols, "--undefined-only");
@@ -115,4 +104,62 @@ ProcessResult nm_defined_extern(const std::string& file, SymbolReferenceSet& sym
     return nm(file, symbols, "-S --defined-only --extern-only");
   else
     return nm(file, symbols, "-S --defined-only --extern-only -D");
+}
+
+ProcessResult nm(const std::string& file, SymbolReferenceSet& symbols,
+                 ThreadPool& out_pool, ThreadPool& err_pool, const std::string& options) {
+  ITT_FUNCTION_TASK();
+
+  ProcessResult process;
+  process.command = "nm " + options + " \"" + file + "\"";
+
+  bp::ipstream out_stream, err_stream;
+
+  bp::child c(process.command,
+              bp::std_in.close(),
+              bp::std_out > out_stream,
+              bp::std_err > err_stream
+              );
+
+  std::future<void> symbols_parsed = out_pool.enqueue(parse_nm_output, std::ref(out_stream), std::ref(symbols));
+
+  std::future<std::string> err_f = err_pool.enqueue([&err_stream](){
+    std::ostringstream ss;
+    ss << err_stream.rdbuf();
+    return ss.str();
+  });
+
+  symbols_parsed.wait();
+  process.err = err_f.get();
+  rtrim(process.err);
+
+  c.wait();
+
+  process.code = c.exit_code();
+
+  return process;
+}
+
+ProcessResult nm_undefined(const std::string& file, SymbolReferenceSet& symbols,
+                           ThreadPool& out_pool, ThreadPool& err_pool, const symbol_table st) {
+  if (st == symbol_table::normal)
+    return nm(file, symbols, out_pool, err_pool, "--undefined-only");
+  else
+    return nm(file, symbols, out_pool, err_pool, "--undefined-only -D");
+}
+
+ProcessResult nm_defined(const std::string& file, SymbolReferenceSet& symbols,
+                         ThreadPool& out_pool, ThreadPool& err_pool, const symbol_table st) {
+  if (st == symbol_table::normal)
+    return nm(file, symbols, out_pool, err_pool, "-S --defined-only");
+  else
+    return nm(file, symbols, out_pool, err_pool, "-S --defined-only -D");
+}
+
+ProcessResult nm_defined_extern(const std::string& file, SymbolReferenceSet& symbols,
+                                ThreadPool& out_pool, ThreadPool& err_pool, const symbol_table st) {
+  if (st == symbol_table::normal)
+    return nm(file, symbols, out_pool, err_pool, "-S --defined-only --extern-only");
+  else
+    return nm(file, symbols, out_pool, err_pool, "-S --defined-only --extern-only -D");
 }

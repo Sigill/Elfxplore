@@ -129,6 +129,37 @@ void extract_symbols_from_file(const Artifact& artifact, SymbolExtractionStatus&
   }
 }
 
+void extract_symbols_from_file(const Artifact& artifact, SymbolExtractionStatus& status, ThreadPool& out_pool, ThreadPool& err_pool) {
+  ITT_FUNCTION_TASK();
+
+  const std::string& usable_path = artifact.name;
+  const bool is_dynamic = artifact.type == "shared";
+
+  std::ifstream file(usable_path, std::ios::in | std::ios::binary);
+  char magic[4] = {0, 0, 0, 0};
+  file.read(magic, 4);
+  file.close();
+  status.linker_script = !(magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F');
+
+  if (!status.linker_script) {
+    ArtifactSymbols& symbols = status.symbols;
+
+    status.processes.emplace_back(nm_undefined(usable_path, symbols.undefined, out_pool, err_pool, symbol_table::normal));
+    if (is_dynamic && symbols.undefined.empty())
+      status.processes.emplace_back(nm_undefined(usable_path, symbols.undefined, out_pool, err_pool, symbol_table::dynamic));
+
+    status.processes.emplace_back(nm_defined_extern(usable_path, symbols.external, out_pool, err_pool, symbol_table::normal));
+    if (is_dynamic && symbols.external.empty())
+      status.processes.emplace_back(nm_defined_extern(usable_path, symbols.external, out_pool, err_pool, symbol_table::dynamic));
+
+    status.processes.emplace_back(nm_defined(usable_path, symbols.external, out_pool, err_pool, symbol_table::normal));
+    if (is_dynamic && symbols.external.empty())
+      status.processes.emplace_back(nm_defined(usable_path, symbols.external, out_pool, err_pool, symbol_table::dynamic));
+
+    substract_set(symbols.internal, symbols.external);
+  }
+}
+
 } // anonymous namespace
 
 void import_command(Database2& db,
@@ -232,6 +263,12 @@ bool has_failure(const SymbolExtractionStatus& status) {
   return status.linker_script || has_failure(status.processes);
 }
 
+SymbolExtractor::SymbolExtractor(size_t pool_size)
+  : pool_size(pool_size)
+  , out_pool(pool_size)
+  , err_pool(pool_size)
+{}
+
 void SymbolExtractor::run(Database2& db)
 {
   ITT_FUNCTION_TASK();
@@ -242,7 +279,7 @@ void SymbolExtractor::run(Database2& db)
   if (notifyTotalSteps)
     notifyTotalSteps(db.get_id(cq));
 
-#pragma omp parallel
+#pragma omp parallel num_threads(pool_size)
 #pragma omp single
   while (q.executeStep()) {
     Artifact artifact;
@@ -253,7 +290,7 @@ void SymbolExtractor::run(Database2& db)
 #pragma omp task firstprivate(artifact)
     {
       SymbolExtractionStatus status;
-      extract_symbols_from_file(artifact, status);
+      extract_symbols_from_file(artifact, status, out_pool, err_pool);
 #pragma omp critical
       {
         db.insert_symbol_references(artifact.id, status.symbols);

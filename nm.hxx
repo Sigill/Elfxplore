@@ -22,4 +22,18 @@ ProcessResult nm_defined(const std::string& file, SymbolReferenceSet& symbols, c
 
 ProcessResult nm_defined_extern(const std::string& file, SymbolReferenceSet& symbols, const symbol_table st);
 
+class ThreadPool;
+
+ProcessResult nm(const std::string& file, SymbolReferenceSet& symbols,
+                 ThreadPool& out_pool, ThreadPool& err_pool, const std::string& options = std::string());
+
+ProcessResult nm_undefined(const std::string& file, SymbolReferenceSet& symbols,
+                           ThreadPool& out_pool, ThreadPool& err_pool, const symbol_table st);
+
+ProcessResult nm_defined(const std::string& file, SymbolReferenceSet& symbols,
+                         ThreadPool& out_pool, ThreadPool& err_pool, const symbol_table st);
+
+ProcessResult nm_defined_extern(const std::string& file, SymbolReferenceSet& symbols,
+                                ThreadPool& out_pool, ThreadPool& err_pool, const symbol_table st);
+
 #endif /* NM_HXX */

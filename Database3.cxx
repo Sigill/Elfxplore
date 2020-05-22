@@ -164,7 +164,7 @@ void Database3::load_symbols()
     return;
   }
 
-  SymbolExtractor e;
+  SymbolExtractor e(4);
   ProgressBar progress;
   e.notifyTotalSteps = [&progress](const size_t size){ progress.start(size); };
   e.notifyStep = [&progress](const Artifact& artifact, const SymbolExtractionStatus& status){

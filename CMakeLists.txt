@@ -24,6 +24,15 @@ ExternalProject_Add(termcolor_project
 ExternalProject_Get_Property(termcolor_project SOURCE_DIR)
 set(TERMCOLOR_INCLUDE_DIR ${SOURCE_DIR}/include)
 
+
+ExternalProject_Add(progschj_ThreadPool
+    GIT_REPOSITORY git://github.com/progschj/ThreadPool.git
+    GIT_TAG 9a42ec1
+    CONFIGURE_COMMAND "" BUILD_COMMAND "" INSTALL_COMMAND "")
+ExternalProject_Get_Property(progschj_ThreadPool SOURCE_DIR)
+set(progschj_ThreadPool_DIR ${SOURCE_DIR})
+
+
 option(ENABLE_INSTRUMENTATION "Enable internal log messages" OFF)
 if(ENABLE_INSTRUMENTATION)
     set(INTELSEAPI_ROOT "" CACHE PATH "Root directory of IntelSEAPI")
@@ -47,8 +56,10 @@ add_library(elfxplore-core STATIC
     utils.cxx
     query-utils.cxx
     command-utils.cxx
-    database-utils.cxx)
-target_include_directories(elfxplore-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    database-utils.cxx
+)
+target_include_directories(elfxplore-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
+                                          PRIVATE ${progschj_ThreadPool_DIR})
 target_link_libraries(elfxplore-core
     PUBLIC SQLiteCpp Boost::system Boost::program_options Boost::filesystem
     PRIVATE SQLite::SQLite3 Threads::Threads OpenMP::OpenMP_CXX shellwords)
@@ -66,7 +77,8 @@ add_executable(elfxplore
     tasks/analyse-task.cxx
     tasks/artifacts-task.cxx
     elfxplore.cxx)
-target_include_directories(elfxplore PRIVATE ${TERMCOLOR_INCLUDE_DIR})
+target_include_directories(elfxplore PRIVATE ${TERMCOLOR_INCLUDE_DIR}
+                                             ${progschj_ThreadPool_DIR})
 target_link_libraries(elfxplore
     PRIVATE elfxplore-core Boost::system Boost::program_options Boost::filesystem
             Threads::Threads SQLiteCpp OpenMP::OpenMP_CXX shellwords linemarkers)

@@ -9,6 +9,7 @@
 
 #include "process-utils.hxx"
 #include "ArtifactSymbols.hxx"
+#include "ThreadPool.h"
 
 class Database2;
 class CompilationCommand;
@@ -46,9 +47,15 @@ bool has_failure(const std::vector<ProcessResult>& processes);
 bool has_failure(const SymbolExtractionStatus& status);
 
 class SymbolExtractor {
+private:
+  size_t pool_size;
+  ThreadPool out_pool, err_pool;
+
 public:
   std::function<void(const size_t)> notifyTotalSteps;
   std::function<void(const Artifact&, const SymbolExtractionStatus&)> notifyStep;
+
+  explicit SymbolExtractor(size_t pool_size);
   void run(Database2& db);
 };
 
