@@ -50,6 +50,8 @@ class SymbolExtractor {
 private:
   size_t pool_size;
   ThreadPool out_pool, err_pool;
+  std::function<std::future<void>(std::istream& stream, SymbolReferenceSet& symbols)> out_runner;
+  std::function<std::future<std::string>(std::istream& stream)> err_runner;
 
 public:
   std::function<void(const size_t)> notifyTotalSteps;

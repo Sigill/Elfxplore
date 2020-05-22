@@ -98,38 +98,30 @@ long long get_or_insert_artifact(Database2& db, const std::string& name, const s
   return artifact_id;
 }
 
-void extract_symbols_from_file(const Artifact& artifact, SymbolExtractionStatus& status) {
-  ITT_FUNCTION_TASK();
-
-  const std::string& usable_path = artifact.name;
-  const bool is_dynamic = artifact.type == "shared";
-
-  std::ifstream file(usable_path, std::ios::in | std::ios::binary);
-  char magic[4] = {0, 0, 0, 0};
-  file.read(magic, 4);
-  file.close();
-  status.linker_script = !(magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F');
-
-  if (!status.linker_script) {
-    ArtifactSymbols& symbols = status.symbols;
-
-    status.processes.emplace_back(nm_undefined(usable_path, symbols.undefined, symbol_table::normal));
-    if (is_dynamic && symbols.undefined.empty())
-      status.processes.emplace_back(nm_undefined(usable_path, symbols.undefined, symbol_table::dynamic));
-
-    status.processes.emplace_back(nm_defined_extern(usable_path, symbols.external, symbol_table::normal));
-    if (is_dynamic && symbols.external.empty())
-      status.processes.emplace_back(nm_defined_extern(usable_path, symbols.external, symbol_table::dynamic));
-
-    status.processes.emplace_back(nm_defined(usable_path, symbols.external, symbol_table::normal));
-    if (is_dynamic && symbols.external.empty())
-      status.processes.emplace_back(nm_defined(usable_path, symbols.external, symbol_table::dynamic));
-
-    substract_set(symbols.internal, symbols.external);
+class out_pool_scheduler {
+private:
+  ThreadPool& pool;
+public:
+  explicit out_pool_scheduler(ThreadPool& pool) : pool(pool) {}
+  std::future<void> operator()(std::istream& stream, SymbolReferenceSet& symbols) {
+    return pool.enqueue(parse_nm_output, std::ref(stream), std::ref(symbols));
   }
-}
+};
 
-void extract_symbols_from_file(const Artifact& artifact, SymbolExtractionStatus& status, ThreadPool& out_pool, ThreadPool& err_pool) {
+class err_pool_scheduler {
+private:
+  ThreadPool& pool;
+public:
+  explicit err_pool_scheduler(ThreadPool& pool) : pool(pool) {}
+  std::future<std::string> operator()(std::istream& stream) {
+    return pool.enqueue(read_stream, std::ref(stream));
+  }
+};
+
+void extract_symbols_from_file(const Artifact& artifact,
+                               SymbolExtractionStatus& status,
+                               const std::function<std::future<void>(std::istream& stream, SymbolReferenceSet& symbols)>& out_runner,
+                               const std::function<std::future<std::string>(std::istream& stream)>& err_runner) {
   ITT_FUNCTION_TASK();
 
   const std::string& usable_path = artifact.name;
@@ -144,17 +136,17 @@ void extract_symbols_from_file(const Artifact& artifact, SymbolExtractionStatus&
   if (!status.linker_script) {
     ArtifactSymbols& symbols = status.symbols;
 
-    status.processes.emplace_back(nm_undefined(usable_path, symbols.undefined, out_pool, err_pool, symbol_table::normal));
+    status.processes.emplace_back(nm_undefined(usable_path, symbols.undefined, out_runner, err_runner));
     if (is_dynamic && symbols.undefined.empty())
-      status.processes.emplace_back(nm_undefined(usable_path, symbols.undefined, out_pool, err_pool, symbol_table::dynamic));
+      status.processes.emplace_back(nm_undefined_dynamic(usable_path, symbols.undefined, out_runner, err_runner));
 
-    status.processes.emplace_back(nm_defined_extern(usable_path, symbols.external, out_pool, err_pool, symbol_table::normal));
+    status.processes.emplace_back(nm_defined_extern(usable_path, symbols.external, out_runner, err_runner));
     if (is_dynamic && symbols.external.empty())
-      status.processes.emplace_back(nm_defined_extern(usable_path, symbols.external, out_pool, err_pool, symbol_table::dynamic));
+      status.processes.emplace_back(nm_defined_extern_dynamic(usable_path, symbols.external, out_runner, err_runner));
 
-    status.processes.emplace_back(nm_defined(usable_path, symbols.external, out_pool, err_pool, symbol_table::normal));
+    status.processes.emplace_back(nm_defined(usable_path, symbols.external, out_runner, err_runner));
     if (is_dynamic && symbols.external.empty())
-      status.processes.emplace_back(nm_defined(usable_path, symbols.external, out_pool, err_pool, symbol_table::dynamic));
+      status.processes.emplace_back(nm_defined_dynamic(usable_path, symbols.external, out_runner, err_runner));
 
     substract_set(symbols.internal, symbols.external);
   }
@@ -267,6 +259,8 @@ SymbolExtractor::SymbolExtractor(size_t pool_size)
   : pool_size(pool_size)
   , out_pool(pool_size)
   , err_pool(pool_size)
+  , out_runner(out_pool_scheduler(out_pool))
+  , err_runner(err_pool_scheduler(err_pool))
 {}
 
 void SymbolExtractor::run(Database2& db)
@@ -290,7 +284,7 @@ void SymbolExtractor::run(Database2& db)
 #pragma omp task firstprivate(artifact)
     {
       SymbolExtractionStatus status;
-      extract_symbols_from_file(artifact, status, out_pool, err_pool);
+      extract_symbols_from_file(artifact, status, out_runner, err_runner);
 #pragma omp critical
       {
         db.insert_symbol_references(artifact.id, status.symbols);

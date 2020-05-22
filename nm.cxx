@@ -1,10 +1,6 @@
 #include "nm.hxx"
 
-
-#include <future>
 #include <sstream>
-#include <string.h>
-#include <thread>
 
 #include <boost/process.hpp>
 
@@ -16,7 +12,95 @@ namespace bp = boost::process;
 
 ITT_DOMAIN("elfxplore");
 
-namespace {
+ProcessResult nm(const std::string& file,
+                 SymbolReferenceSet& symbols,
+                 const std::string& options,
+                 const std::function<std::future<void>(std::istream&, SymbolReferenceSet&)>& async_parse_out,
+                 const std::function<std::future<std::string>(std::istream&)>& async_parse_err)
+{
+  ITT_FUNCTION_TASK();
+
+  ProcessResult process;
+  process.command = "nm " + options + " \"" + file + "\"";
+
+  bp::ipstream out_stream, err_stream;
+
+  bp::child c(process.command,
+              bp::std_in.close(),
+              bp::std_out > out_stream,
+              bp::std_err > err_stream
+              );
+
+  std::future<void> symbols_parsed = async_parse_out(out_stream, symbols);
+
+  std::future<std::string> err_f = async_parse_err(err_stream);
+
+  symbols_parsed.wait();
+  process.err = err_f.get();
+  rtrim(process.err);
+
+  c.wait();
+
+  process.code = c.exit_code();
+
+  return process;
+}
+
+ProcessResult nm_undefined(const std::string& file,
+                           SymbolReferenceSet& symbols,
+                           const std::function<std::future<void>(std::istream&, SymbolReferenceSet&)>& async_parse_out,
+                           const std::function<std::future<std::string>(std::istream&)>& async_parse_err)
+{
+  return nm(file, symbols, "--undefined-only", async_parse_out, async_parse_err);
+}
+
+ProcessResult nm_undefined_dynamic(const std::string& file,
+                                   SymbolReferenceSet& symbols,
+                                   const std::function<std::future<void>(std::istream&, SymbolReferenceSet&)>& async_parse_out,
+                                   const std::function<std::future<std::string>(std::istream&)>& async_parse_err)
+{
+  return nm(file, symbols, "--undefined-only -D", async_parse_out, async_parse_err);
+}
+
+ProcessResult nm_defined(const std::string& file,
+                         SymbolReferenceSet& symbols,
+                         const std::function<std::future<void>(std::istream&, SymbolReferenceSet&)>& async_parse_out,
+                         const std::function<std::future<std::string>(std::istream&)>& async_parse_err)
+{
+  return nm(file, symbols, "-S --defined-only", async_parse_out, async_parse_err);
+}
+
+ProcessResult nm_defined_dynamic(const std::string& file,
+                                 SymbolReferenceSet& symbols,
+                                 const std::function<std::future<void>(std::istream&, SymbolReferenceSet&)>& async_parse_out,
+                                 const std::function<std::future<std::string>(std::istream&)>& async_parse_err)
+{
+  return nm(file, symbols, "-S --defined-only -D", async_parse_out, async_parse_err);
+}
+
+ProcessResult nm_defined_extern(const std::string& file,
+                                SymbolReferenceSet& symbols,
+                                const std::function<std::future<void>(std::istream&, SymbolReferenceSet&)>& async_parse_out,
+                                const std::function<std::future<std::string>(std::istream&)>& async_parse_err)
+{
+  return nm(file, symbols, "-S --defined-only --extern-only", async_parse_out, async_parse_err);
+}
+
+ProcessResult nm_defined_extern_dynamic(const std::string& file,
+                                        SymbolReferenceSet& symbols,
+                                        const std::function<std::future<void>(std::istream&, SymbolReferenceSet&)>& async_parse_out,
+                                        const std::function<std::future<std::string>(std::istream&)>& async_parse_err)
+{
+  return nm(file, symbols, "-S --defined-only --extern-only -D", async_parse_out, async_parse_err);
+}
+
+std::future<void> async_symbol_parser(std::istream& stream, SymbolReferenceSet& symbols) {
+  return std::async(std::launch::async, [&stream, &symbols](){ parse_nm_output(stream, symbols); });
+}
+
+std::future<std::string> async_stream_reader(std::istream& stream) {
+  return std::async(std::launch::async, [&stream]() { return read_stream(stream); });
+};
 
 void parse_nm_output(std::istream& stream, SymbolReferenceSet& symbols) {
   std::string line;
@@ -50,116 +134,42 @@ void parse_nm_output(std::istream& stream, SymbolReferenceSet& symbols) {
   }
 }
 
-} // anonymous namespace
+std::string read_stream(std::istream& stream) {
+  std::ostringstream ss;
+  ss << stream.rdbuf();
+  return ss.str();
+}
 
 ProcessResult nm(const std::string& file, SymbolReferenceSet& symbols, const std::string& options) {
-  ITT_FUNCTION_TASK();
-
-  ProcessResult process;
-  process.command = "nm " + options + " \"" + file + "\"";
-
-  bp::ipstream out_stream, err_stream;
-
-  bp::child c(process.command,
-              bp::std_in.close(),
-              bp::std_out > out_stream,
-              bp::std_err > err_stream
-              );
-
-  std::future<void> symbols_parsed = std::async(std::launch::async, [&out_stream, &symbols](){ parse_nm_output(out_stream, symbols); });
-
-  std::future<std::string> err_f = std::async(std::launch::async, [&err_stream](){
-    std::ostringstream ss;
-    ss << err_stream.rdbuf();
-    return ss.str();
-  });
-
-  symbols_parsed.wait();
-  process.err = err_f.get();
-  rtrim(process.err);
-
-  c.wait();
-
-  process.code = c.exit_code();
-
-  return process;
+  return nm(file, symbols, options, async_symbol_parser, async_stream_reader);
 }
 
-ProcessResult  nm_undefined(const std::string& file, SymbolReferenceSet& symbols, const symbol_table st) {
-  if (st == symbol_table::normal)
-    return nm(file, symbols, "--undefined-only");
-  else
-    return nm(file, symbols, "--undefined-only -D");
+ProcessResult nm_undefined(const std::string& file, SymbolReferenceSet& symbols)
+{
+  return nm(file, symbols, "--undefined-only", async_symbol_parser, async_stream_reader);
 }
 
-ProcessResult nm_defined(const std::string& file, SymbolReferenceSet& symbols, const symbol_table st) {
-  if (st == symbol_table::normal)
-    return nm(file, symbols, "-S --defined-only");
-  else
-    return nm(file, symbols, "-S --defined-only -D");
+ProcessResult nm_undefined_dynamic(const std::string& file, SymbolReferenceSet& symbols)
+{
+  return nm(file, symbols, "--undefined-only -D", async_symbol_parser, async_stream_reader);
 }
 
-ProcessResult nm_defined_extern(const std::string& file, SymbolReferenceSet& symbols, const symbol_table st) {
-  if (st == symbol_table::normal)
-    return nm(file, symbols, "-S --defined-only --extern-only");
-  else
-    return nm(file, symbols, "-S --defined-only --extern-only -D");
+ProcessResult nm_defined(const std::string& file, SymbolReferenceSet& symbols)
+{
+  return nm(file, symbols, "-S --defined-only", async_symbol_parser, async_stream_reader);
 }
 
-ProcessResult nm(const std::string& file, SymbolReferenceSet& symbols,
-                 ThreadPool& out_pool, ThreadPool& err_pool, const std::string& options) {
-  ITT_FUNCTION_TASK();
-
-  ProcessResult process;
-  process.command = "nm " + options + " \"" + file + "\"";
-
-  bp::ipstream out_stream, err_stream;
-
-  bp::child c(process.command,
-              bp::std_in.close(),
-              bp::std_out > out_stream,
-              bp::std_err > err_stream
-              );
-
-  std::future<void> symbols_parsed = out_pool.enqueue(parse_nm_output, std::ref(out_stream), std::ref(symbols));
-
-  std::future<std::string> err_f = err_pool.enqueue([&err_stream](){
-    std::ostringstream ss;
-    ss << err_stream.rdbuf();
-    return ss.str();
-  });
-
-  symbols_parsed.wait();
-  process.err = err_f.get();
-  rtrim(process.err);
-
-  c.wait();
-
-  process.code = c.exit_code();
-
-  return process;
+ProcessResult nm_defined_dynamic(const std::string& file, SymbolReferenceSet& symbols)
+{
+  return nm(file, symbols, "-S --defined-only -D", async_symbol_parser, async_stream_reader);
 }
 
-ProcessResult nm_undefined(const std::string& file, SymbolReferenceSet& symbols,
-                           ThreadPool& out_pool, ThreadPool& err_pool, const symbol_table st) {
-  if (st == symbol_table::normal)
-    return nm(file, symbols, out_pool, err_pool, "--undefined-only");
-  else
-    return nm(file, symbols, out_pool, err_pool, "--undefined-only -D");
+ProcessResult nm_defined_extern(const std::string& file, SymbolReferenceSet& symbols)
+{
+  return nm(file, symbols, "-S --defined-only --extern-only", async_symbol_parser, async_stream_reader);
 }
 
-ProcessResult nm_defined(const std::string& file, SymbolReferenceSet& symbols,
-                         ThreadPool& out_pool, ThreadPool& err_pool, const symbol_table st) {
-  if (st == symbol_table::normal)
-    return nm(file, symbols, out_pool, err_pool, "-S --defined-only");
-  else
-    return nm(file, symbols, out_pool, err_pool, "-S --defined-only -D");
-}
-
-ProcessResult nm_defined_extern(const std::string& file, SymbolReferenceSet& symbols,
-                                ThreadPool& out_pool, ThreadPool& err_pool, const symbol_table st) {
-  if (st == symbol_table::normal)
-    return nm(file, symbols, out_pool, err_pool, "-S --defined-only --extern-only");
-  else
-    return nm(file, symbols, out_pool, err_pool, "-S --defined-only --extern-only -D");
+ProcessResult nm_defined_extern_dynamic(const std::string& file, SymbolReferenceSet& symbols)
+{
+  return nm(file, symbols, "-S --defined-only --extern-only -D", async_symbol_parser, async_stream_reader);
 }
