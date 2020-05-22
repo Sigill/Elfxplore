@@ -3,6 +3,8 @@ project(Elfxplore)
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}")
 
+set (CMAKE_CXX_STANDARD 17)
+
 find_package(Threads REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system program_options filesystem)
 find_package(SQLite3 REQUIRED)
@@ -25,12 +27,22 @@ ExternalProject_Get_Property(termcolor_project SOURCE_DIR)
 set(TERMCOLOR_INCLUDE_DIR ${SOURCE_DIR}/include)
 
 
-ExternalProject_Add(progschj_ThreadPool
-    GIT_REPOSITORY git://github.com/progschj/ThreadPool.git
-    GIT_TAG 9a42ec1
-    CONFIGURE_COMMAND "" BUILD_COMMAND "" INSTALL_COMMAND "")
-ExternalProject_Get_Property(progschj_ThreadPool SOURCE_DIR)
-set(progschj_ThreadPool_DIR ${SOURCE_DIR})
+ExternalProject_Add(jhasse_ThreadPool_project
+    GIT_REPOSITORY git://github.com/jhasse/ThreadPool.git
+    GIT_TAG e9123ff
+    BUILD_IN_SOURCE ON
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ${CMAKE_CXX_COMPILER} -O2 -std=c++17 -c ThreadPool.cpp -o ThreadPool.cpp.o && ${CMAKE_AR} qc ThreadPool.a ThreadPool.cpp.o
+    INSTALL_COMMAND "")
+ExternalProject_Get_Property(jhasse_ThreadPool_project SOURCE_DIR)
+set(jhasse_ThreadPool_DIR ${SOURCE_DIR})
+add_library(jhasse_ThreadPool STATIC IMPORTED)
+set_target_properties(jhasse_ThreadPool PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${jhasse_ThreadPool_DIR}"
+    IMPORTED_LINK_INTERFACE_LIBRARIES "Threads::Threads"
+    IMPORTED_LOCATION "${jhasse_ThreadPool_DIR}/ThreadPool.a"
+    )
+add_dependencies(jhasse_ThreadPool jhasse_ThreadPool_project)
 
 
 option(ENABLE_INSTRUMENTATION "Enable internal log messages" OFF)
@@ -41,11 +53,12 @@ if(ENABLE_INSTRUMENTATION)
 
     set_target_properties(ittnotify PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES "${INTELSEAPI_ROOT}/include"
-        IMPORTED_LINK_INTERFACE_LIBRARIES "pthread;dl"
+        IMPORTED_LINK_INTERFACE_LIBRARIES "Threads::Threads;dl"
         IMPORTED_LOCATION "${INTELSEAPI_ROOT}/lib/libittnotify64.a"
         INTERFACE_COMPILE_DEFINITIONS ENABLE_INSTRUMENTATION
         )
 endif()
+
 
 add_library(elfxplore-core STATIC
     logger.cxx
@@ -58,11 +71,11 @@ add_library(elfxplore-core STATIC
     command-utils.cxx
     database-utils.cxx
 )
-target_include_directories(elfxplore-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
-                                          PRIVATE ${progschj_ThreadPool_DIR})
+add_dependencies(elfxplore-core jhasse_ThreadPool)
+target_include_directories(elfxplore-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(elfxplore-core
     PUBLIC SQLiteCpp Boost::system Boost::program_options Boost::filesystem
-    PRIVATE SQLite::SQLite3 Threads::Threads OpenMP::OpenMP_CXX shellwords)
+    PRIVATE SQLite::SQLite3 Threads::Threads OpenMP::OpenMP_CXX shellwords jhasse_ThreadPool)
 if (ENABLE_INSTRUMENTATION)
     target_link_libraries(elfxplore-core PRIVATE ittnotify)
 endif()
@@ -77,8 +90,7 @@ add_executable(elfxplore
     tasks/analyse-task.cxx
     tasks/artifacts-task.cxx
     elfxplore.cxx)
-target_include_directories(elfxplore PRIVATE ${TERMCOLOR_INCLUDE_DIR}
-                                             ${progschj_ThreadPool_DIR})
+target_include_directories(elfxplore PRIVATE ${TERMCOLOR_INCLUDE_DIR} ${jhasse_ThreadPool_DIR})
 target_link_libraries(elfxplore
     PRIVATE elfxplore-core Boost::system Boost::program_options Boost::filesystem
             Threads::Threads SQLiteCpp OpenMP::OpenMP_CXX shellwords linemarkers)

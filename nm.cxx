@@ -10,7 +10,7 @@
 
 #include "utils.hxx"
 #include "instrumentation.hxx"
-#include "ThreadPool.h"
+#include "ThreadPool.hpp"
 
 namespace bp = boost::process;
 

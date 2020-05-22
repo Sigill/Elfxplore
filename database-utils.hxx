@@ -9,7 +9,7 @@
 
 #include "process-utils.hxx"
 #include "ArtifactSymbols.hxx"
-#include "ThreadPool.h"
+#include "ThreadPool.hpp"
 
 class Database2;
 class CompilationCommand;
