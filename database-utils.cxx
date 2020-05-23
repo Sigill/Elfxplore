@@ -136,17 +136,17 @@ void extract_symbols_from_file(const Artifact& artifact,
   if (!status.linker_script) {
     ArtifactSymbols& symbols = status.symbols;
 
-    status.processes.emplace_back(nm_undefined(usable_path, symbols.undefined, out_runner, err_runner));
+    status.processes.emplace_back(nm(usable_path, symbols.undefined, nm_options::undefined, out_runner, err_runner));
     if (is_dynamic && symbols.undefined.empty())
-      status.processes.emplace_back(nm_undefined_dynamic(usable_path, symbols.undefined, out_runner, err_runner));
+      status.processes.emplace_back(nm(usable_path, symbols.undefined, nm_options::undefined_dynamic, out_runner, err_runner));
 
-    status.processes.emplace_back(nm_defined_extern(usable_path, symbols.external, out_runner, err_runner));
+    status.processes.emplace_back(nm(usable_path, symbols.external, nm_options::defined_extern, out_runner, err_runner));
     if (is_dynamic && symbols.external.empty())
-      status.processes.emplace_back(nm_defined_extern_dynamic(usable_path, symbols.external, out_runner, err_runner));
+      status.processes.emplace_back(nm(usable_path, symbols.external, nm_options::defined_extern_dynamic, out_runner, err_runner));
 
-    status.processes.emplace_back(nm_defined(usable_path, symbols.external, out_runner, err_runner));
+    status.processes.emplace_back(nm(usable_path, symbols.external, nm_options::defined, out_runner, err_runner));
     if (is_dynamic && symbols.external.empty())
-      status.processes.emplace_back(nm_defined_dynamic(usable_path, symbols.external, out_runner, err_runner));
+      status.processes.emplace_back(nm(usable_path, symbols.external, nm_options::defined_dynamic, out_runner, err_runner));
 
     substract_set(symbols.internal, symbols.external);
   }
@@ -196,7 +196,7 @@ void import_compile_commands(Database2& db,
     const auto& data = entry.second;
     cmd.directory = data.get_child("directory").data();
     const std::string line = data.get_child("command").data();
-    parse_command(line, cmd, false);
+    parse_command(line, cmd, parse_command_options::expand_path);
 
     import_command(db, line, cmd, notify);
   }

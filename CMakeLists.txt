@@ -105,10 +105,10 @@ if(BUILD_TESTING)
     enable_testing()
 
     add_executable(unit-tests tests/unit-tests.cxx)
-      target_link_libraries(unit-tests
+    target_link_libraries(unit-tests
         PRIVATE elfxplore-core
-                shellwords
-                GTest::gmock_main
-                Boost::program_options)
-      add_test(unit-tests unit-tests)
+        shellwords
+        GTest::gmock_main
+        Boost::program_options)
+    add_test(unit-tests unit-tests)
 endif()

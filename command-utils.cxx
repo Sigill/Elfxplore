@@ -48,11 +48,11 @@ bool is_ar(const std::string& command) {
   return ends_with(command, "ar");
 }
 
-void parse_command(const std::string& line, CompilationCommand& command, const bool with_directory)
+void parse_command(const std::string& line, CompilationCommand& command, const int options)
 {
   shellwords::shell_splitter splitter(line.begin(), line.end());
 
-  if (with_directory && splitter.read_next()) {
+  if ((options & parse_command_options::with_directory) && splitter.read_next()) {
     command.directory = splitter.arg();
   }
 
@@ -71,7 +71,9 @@ void parse_command(const std::string& line, CompilationCommand& command, const b
   }
 
   if (!command.output.empty()) {
-    command.output = expand_path(command.output, command.directory).string();
+    if (options & parse_command_options::expand_path) {
+      command.output = expand_path(command.output, command.directory).string();
+    }
     command.output_type = get_output_type(command.output);
   }
 }
