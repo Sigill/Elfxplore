@@ -6,7 +6,7 @@ set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}")
 set (CMAKE_CXX_STANDARD 17)
 
 find_package(Threads REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system program_options filesystem)
+find_package(Boost REQUIRED COMPONENTS system program_options)
 find_package(SQLite3 REQUIRED)
 find_package(SQLiteCpp REQUIRED)
 find_package(OpenMP REQUIRED)
@@ -59,6 +59,7 @@ if(ENABLE_INSTRUMENTATION)
         )
 endif()
 
+set(FILESYSTEM_LIBRARY "stdc++fs")
 
 add_library(elfxplore-core STATIC
     logger.cxx
@@ -74,7 +75,7 @@ add_library(elfxplore-core STATIC
 add_dependencies(elfxplore-core jhasse_ThreadPool)
 target_include_directories(elfxplore-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(elfxplore-core
-    PUBLIC SQLiteCpp Boost::system Boost::program_options Boost::filesystem
+    PUBLIC SQLiteCpp Boost::system Boost::program_options ${FILESYSTEM_LIBRARY}
     PRIVATE SQLite::SQLite3 Threads::Threads OpenMP::OpenMP_CXX shellwords jhasse_ThreadPool)
 if (ENABLE_INSTRUMENTATION)
     target_link_libraries(elfxplore-core PRIVATE ittnotify)
@@ -92,7 +93,7 @@ add_executable(elfxplore
     elfxplore.cxx)
 target_include_directories(elfxplore PRIVATE ${TERMCOLOR_INCLUDE_DIR} ${jhasse_ThreadPool_DIR})
 target_link_libraries(elfxplore
-    PRIVATE elfxplore-core Boost::system Boost::program_options Boost::filesystem
+    PRIVATE elfxplore-core Boost::system Boost::program_options
             Threads::Threads SQLiteCpp OpenMP::OpenMP_CXX shellwords linemarkers)
 if (ENABLE_INSTRUMENTATION)
     target_link_libraries(elfxplore PRIVATE ittnotify)

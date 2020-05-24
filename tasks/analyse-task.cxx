@@ -7,11 +7,11 @@
 #include <chrono>
 #include <future>
 #include <map>
+#include <filesystem>
 
 #include <boost/program_options.hpp>
 #include <boost/process.hpp>
 #include <boost/asio.hpp>
-#include <boost/filesystem.hpp>
 
 #include <termcolor/termcolor.hpp>
 
@@ -26,10 +26,12 @@
 #include "csvprinter.h"
 #include "infix_iterator.hxx"
 #include "process-utils.hxx"
+#include "utils.hxx"
+
 #include "linemarkers/linemarkers.hxx"
 
 namespace bpo = boost::program_options;
-namespace bfs = boost::filesystem;
+namespace fs = std::filesystem;
 namespace bp = boost::process;
 
 namespace {
@@ -421,6 +423,17 @@ void analyse_useless_dependencies_symbols(Database2& db, const std::vector<long 
   }
 }
 
+const std::string& ldd() {
+  static std::string path = []{
+    bool found;
+    std::string p = which("ldd", found);
+    if (!found)
+      throw std::runtime_error("Unable to locate \"ldd\" executable");
+    return p;
+  }();
+  return path;
+}
+
 void analyse_useless_dependencies_ldd(Database2& db, const std::vector<long long>& artifacts)
 {
   for(const long long artifact_id : artifacts) {
@@ -429,7 +442,7 @@ void analyse_useless_dependencies_ldd(Database2& db, const std::vector<long long
 
     std::future<std::string> out_, err_;
 
-    bp::child c(bp::search_path("ldd"), "-u", "-r", artifact,
+    bp::child c(ldd(), "-u", "-r", artifact,
                 bp::std_in.close(),
                 bp::std_out > out_,
                 bp::std_err > err_,
@@ -604,7 +617,7 @@ ProcessResult time_link(const CompilationCommand& command, double& duration) {
     const std::string cmd = redirect_gcc_output(command, "/dev/null");
     return time_command(cmd, command.directory, duration);
   } else {
-    const TempFileGuard a = TempFileGuard(bfs::unique_path(bfs::temp_directory_path() / "%%%%-%%%%-%%%%-%%%%.a"));
+    const FileSystemGuard a = FileSystemGuard(fs::temp_directory_path() / (random_alnum(16) + ".a"));
     const std::string cmd = redirect_ar_output(command, a.path().string());
     return time_command(cmd, command.directory, duration);
   }
@@ -922,7 +935,7 @@ int Analyse_Task::execute(const std::vector<std::string>& args)
     std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 
     std::ostringstream ss;
-    ss << bfs::current_path().string() << "/" << std::put_time(std::localtime(&now), "elfxplore-commands-%Y-%m-%d-%H-%M-%S.csv");
+    ss << fs::current_path().string() << "/" << std::put_time(std::localtime(&now), "elfxplore-commands-%Y-%m-%d-%H-%M-%S.csv");
 
     std::ofstream out(ss.str());
     analyse_commands(db(), modes, mNumThreads, out);

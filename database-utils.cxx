@@ -2,10 +2,9 @@
 
 #include <fstream>
 #include <chrono>
+#include <filesystem>
 #include <omp.h>
 
-#include <boost/filesystem/path.hpp>
-#include <boost/filesystem/operations.hpp>
 #include <boost/process.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
@@ -19,7 +18,7 @@
 
 #include "instrumentation.hxx"
 
-namespace bfs = boost::filesystem;
+namespace fs = std::filesystem;
 namespace bp = boost::process;
 namespace pt = boost::property_tree;
 
@@ -53,11 +52,11 @@ void import_command(Database2& db,
   }
 }
 
-std::vector<bfs::path> load_default_library_directories() {
+std::vector<fs::path> load_default_library_directories() {
   bp::ipstream pipe_stream;
   bp::child c("gcc --print-search-dir", bp::std_out > pipe_stream, bp::std_err > bp::null);
 
-  std::vector<bfs::path> paths;
+  std::vector<fs::path> paths;
 
   const std::string prefix = "libraries: =";
 
@@ -71,8 +70,8 @@ std::vector<bfs::path> load_default_library_directories() {
     const std::vector<std::string> directories = split(line, ':');
     for(const std::string& dir : directories)
     {
-      boost::system::error_code ec;
-      bfs::path path = bfs::canonical(dir, ec);
+      std::error_code ec;
+      fs::path path = fs::canonical(dir, ec);
       if ((bool)ec) {
         LOG(warning) << "Unable to resolve " << dir;
       } else {
@@ -206,7 +205,7 @@ void DependenciesExtractor::run(Database2& db)
 {
   ITT_FUNCTION_TASK();
 
-  const std::vector<bfs::path> default_library_directories = load_default_library_directories();
+  const std::vector<fs::path> default_library_directories = load_default_library_directories();
 
   auto cq = db.statement("select count(*) from commands");
   if (notifyTotalSteps)

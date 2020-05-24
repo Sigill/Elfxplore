@@ -4,16 +4,16 @@
 #include <string>
 #include <vector>
 #include <map>
-#include <boost/filesystem/path.hpp>
+#include <filesystem>
 
 class Database2;
 
 bool starts_with(const std::string& str, const std::string& prefix);
 bool ends_with(const std::string& str, const std::string& suffix);
 
-boost::filesystem::path expand_path(const std::string& in, const boost::filesystem::path& base);
+std::filesystem::path expand_path(const std::string& in, const std::filesystem::path& base);
 
-boost::filesystem::path expand_path(const std::string& in);
+std::filesystem::path expand_path(const std::string& in);
 
 const char* get_library_type(const std::string& value);
 
@@ -45,17 +45,22 @@ void wc(std::istream& in, size_t& c, size_t& l);
 
 void wc(const std::string& file, size_t& c, size_t& l);
 
-class TempFileGuard {
-private:
-  boost::filesystem::path mPath;
-public:
-  explicit TempFileGuard(const boost::filesystem::path& p);
-  ~TempFileGuard();
+std::string random_alnum(std::string::size_type length);
 
-  const boost::filesystem::path& path() const;
+std::string which(const std::string& executable, bool &found);
+
+class FileSystemGuard {
+private:
+  std::filesystem::path mPath;
+public:
+  explicit FileSystemGuard(const std::filesystem::path& p);
+  ~FileSystemGuard();
+
+  const std::filesystem::path& path() const;
 };
 
 namespace io {
+
 class repeat {
 public:
   const std::string& value;

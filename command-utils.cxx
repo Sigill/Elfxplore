@@ -3,12 +3,11 @@
 #include <sstream>
 #include <algorithm>
 
-#include <boost/filesystem/operations.hpp>
 #include <shellwords/shellwords.hxx>
 
 #include "utils.hxx"
 
-namespace bfs = boost::filesystem;
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -62,7 +61,7 @@ void parse_command(const std::string& line, CompilationCommand& command, const i
 
   command.args = std::string(splitter.suffix(), line.end());
 
-  const std::string executable = bfs::path(command.executable).filename().string();
+  const std::string executable = fs::path(command.executable).filename();
 
   if (is_cc(executable)) {
     parse_cc_args(splitter, command);
@@ -72,7 +71,7 @@ void parse_command(const std::string& line, CompilationCommand& command, const i
 
   if (!command.output.empty()) {
     if (options & parse_command_options::expand_path) {
-      command.output = expand_path(command.output, command.directory).string();
+      command.output = expand_path(command.output, command.directory);
     }
     command.output_type = get_output_type(command.output);
   }
@@ -112,11 +111,11 @@ std::string get_arg(const std::vector<std::string>& args, size_t& i) {
   }
 }
 
-bool locate_library(const std::string& name, const std::vector<bfs::path>& directories, std::string& out) {
-  for(const bfs::path& dir : directories) {
-    const bfs::path candidate = dir / name;
-    if (bfs::exists(candidate)) {
-      out = bfs::canonical(candidate).string();
+bool locate_library(const std::string& name, const std::vector<fs::path>& directories, std::string& out) {
+  for(const fs::path& dir : directories) {
+    const fs::path candidate = dir / name;
+    if (fs::exists(candidate)) {
+      out = fs::canonical(candidate);
       return true;
     }
   }
@@ -125,8 +124,8 @@ bool locate_library(const std::string& name, const std::vector<bfs::path>& direc
 }
 
 std::string locate_library(const std::string& name,
-                           const std::vector<bfs::path>& default_directories,
-                           const std::vector<bfs::path>& other_directories) {
+                           const std::vector<fs::path>& default_directories,
+                           const std::vector<fs::path>& other_directories) {
   std::string path;
 
   locate_library("lib" + name + ".so", other_directories, path)
@@ -138,9 +137,9 @@ std::string locate_library(const std::string& name,
 }
 
 Dependencies parse_cc_dependencies(const std::string& /*executable*/,
-                                   const bfs::path& directory,
+                                   const fs::path& directory,
                                    const std::vector<std::string>& argv,
-                                   const std::vector<bfs::path>& default_library_directories)
+                                   const std::vector<fs::path>& default_library_directories)
 {
   DependenciesResolver resolver;
 
@@ -161,7 +160,7 @@ Dependencies parse_cc_dependencies(const std::string& /*executable*/,
     } else if (starts_with(arg, "-L")) {
       const std::string value = get_arg(argv, i);
       try { resolver.library_directories.emplace_back(absolute(value)); }
-      catch (boost::filesystem::filesystem_error&) { resolver.errors.emplace_back("Invalid -L " + value); }
+      catch (std::filesystem::filesystem_error&) { resolver.errors.emplace_back("Invalid -L " + value); }
     } else if (starts_with(arg, "-l")) {
       resolver.locate_and_add_library(get_arg(argv, i), default_library_directories);
     } else if (starts_with(arg, "-o")) {
@@ -197,7 +196,7 @@ Dependencies parse_cc_dependencies(const std::string& /*executable*/,
   };
 }
 
-Dependencies parse_ar_dependencies(const bfs::path& directory,
+Dependencies parse_ar_dependencies(const fs::path& directory,
                                    const std::vector<std::string>& argv)
 {
   DependenciesResolver resolver;
@@ -228,7 +227,7 @@ Dependencies parse_ar_dependencies(const bfs::path& directory,
 } // anonymous namespace
 
 void DependenciesResolver::locate_and_add_library(const std::string& namespec,
-                                                            const std::vector<bfs::path>& default_library_directories) {
+                                                            const std::vector<fs::path>& default_library_directories) {
   const std::string realpath = locate_library(namespec, default_library_directories, library_directories);
   if (realpath.empty()) {
     errors.emplace_back("Unable to locate library " + namespec + "library");
@@ -239,7 +238,7 @@ void DependenciesResolver::locate_and_add_library(const std::string& namespec,
 
 
 Dependencies parse_dependencies(const CompilationCommand& cmd,
-                                const std::vector<boost::filesystem::path>& default_library_directories)
+                                const std::vector<fs::path>& default_library_directories)
 {
   const std::vector<std::string> argv = shellwords::shellsplit(cmd.args);
 

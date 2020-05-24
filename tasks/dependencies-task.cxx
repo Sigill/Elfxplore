@@ -9,10 +9,10 @@
 #include <iomanip>
 #include <tuple>
 #include <utility>
+#include <functional>
+#include <filesystem>
 
 #include <boost/program_options.hpp>
-#include <boost/filesystem.hpp>
-#include <functional>
 
 #include <SQLiteCpp/Statement.h>
 
@@ -21,7 +21,7 @@
 #include "query-utils.hxx"
 
 namespace bpo = boost::program_options;
-namespace bfs = boost::filesystem;
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -219,7 +219,7 @@ std::map<long long, ArtifactData> map_artifacts(Database2& db, const std::set<De
   while (q.executeStep()) {
     std::string label = q.getColumn(1).getString();
     if (path == false)
-      label = bfs::path(label).filename().string();
+      label = fs::path(label).filename();
 
     mapping.emplace(std::piecewise_construct,
                     std::forward_as_tuple(q.getColumn(0).getInt64()),

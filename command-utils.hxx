@@ -4,8 +4,7 @@
 #include <string>
 #include <vector>
 #include <set>
-
-#include <boost/filesystem/path.hpp>
+#include <filesystem>
 
 bool is_cc(const std::string& command);
 
@@ -41,7 +40,7 @@ public:
 
 class DependenciesResolver {
 public:
-  std::vector<boost::filesystem::path> library_directories;
+  std::vector<std::filesystem::path> library_directories;
 
   std::set<std::string> dependencies;
   std::vector<std::string> errors;
@@ -49,11 +48,11 @@ public:
   void add_libraries_directory(const std::string& value);
 
   void locate_and_add_library(const std::string& namespec,
-                              const std::vector<boost::filesystem::path>& default_library_directories);
+                              const std::vector<std::filesystem::path>& default_library_directories);
 };
 
 Dependencies parse_dependencies(const CompilationCommand& cmd,
-                                const std::vector<boost::filesystem::path>& default_library_directories);
+                                const std::vector<std::filesystem::path>& default_library_directories);
 
 std::string redirect_gcc_output(const CompilationCommand& command, const std::string& to = {});
 

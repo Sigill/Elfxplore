@@ -1,19 +1,38 @@
 #include <gmock/gmock.h>
 
+#include <filesystem>
+#include <fstream>
+#include <stdio.h>
+#include <string.h>
+
 #include <shellwords/shellwords.hxx>
 
 #include <boost/program_options.hpp>
-#include <boost/filesystem.hpp>
 
 #include "command-utils.hxx"
 #include "utils.hxx"
 #include "nm.hxx"
 
-namespace bfs = boost::filesystem;
+namespace fs = std::filesystem;
 
 namespace {
 
-void write_file(const bfs::path& path, const char *data) {
+fs::path create_temporary_directory()
+{
+  const fs::path tmp_dir = std::filesystem::temp_directory_path();
+
+  fs::path path = tmp_dir / "XXXXXX";
+  char tmp[FILENAME_MAX];
+  strncpy(tmp, path.c_str(), FILENAME_MAX-1);
+
+  if (mkdtemp(tmp)) {
+    return fs::path(tmp);
+  }
+
+  throw std::runtime_error(std::string("Unable to create a temporary directory: ") + std::strerror(errno));
+}
+
+void write_file(const fs::path& path, const char *data) {
   std::ofstream of(path.string());
   of << data;
   of.close();
@@ -90,15 +109,13 @@ private:
 }
 
 TEST(elfxplore, nm) {
-  const bfs::path dir(bfs::unique_path(bfs::temp_directory_path() / "%%%%-%%%%-%%%%-%%%%"));
+  const fs::path dir = create_temporary_directory();
 
-  bfs::create_directory(dir);
-
-  const TempFileGuard g(dir);
-  const bfs::path a_c = dir / "a.c";
-  const bfs::path b_c = dir / "b.c";
-  const bfs::path a_so = dir / "liba.so";
-  const bfs::path b_so = dir / "libb.so";
+  const FileSystemGuard g(dir);
+  const fs::path a_c = dir / "a.c";
+  const fs::path b_c = dir / "b.c";
+  const fs::path a_so = dir / "liba.so";
+  const fs::path b_so = dir / "libb.so";
 
   write_file(a_c, "int a() { return 0; }");
   write_file(b_c, R"(

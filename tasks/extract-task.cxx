@@ -4,10 +4,9 @@
 #include <algorithm>
 #include <functional>
 #include <fstream>
+#include <filesystem>
 
 #include <boost/program_options.hpp>
-#include <boost/filesystem/path.hpp>
-#include <boost/filesystem/operations.hpp>
 
 #include <termcolor/termcolor.hpp>
 
@@ -19,7 +18,7 @@
 #include "database-utils.hxx"
 
 namespace bpo = boost::program_options;
-namespace bfs = boost::filesystem;
+namespace fs = std::filesystem;
 
 namespace {
 

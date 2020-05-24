@@ -5,13 +5,15 @@
 #include <sstream>
 #include <regex>
 #include <fstream>
+#include <filesystem>
+#include <random>
 
 #include <wordexp.h>
 
-#include <boost/filesystem/operations.hpp>
-
 #include "Database2.hxx"
 #include "query-utils.hxx"
+
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -35,17 +37,20 @@ bool ends_with(const std::string& str, const std::string& suffix) {
   }
 }
 
-boost::filesystem::path expand_path(const std::string& in, const boost::filesystem::path& base) {
+std::filesystem::path expand_path(const std::string& in, const std::filesystem::path& base) {
   wordexp_t wx;
   wordexp(in.c_str(), &wx, 0);
-  std::string out(wx.we_wordv[0]);
+  std::filesystem::path out(wx.we_wordv[0]);
   wordfree(&wx);
 
-  return boost::filesystem::canonical(out, base);
+  if (out.is_relative())
+    out = base / out;
+
+  return std::filesystem::canonical(out);
 }
 
-boost::filesystem::path expand_path(const std::string& in) {
-  return expand_path(in, boost::filesystem::current_path());
+std::filesystem::path expand_path(const std::string& in) {
+  return expand_path(in, std::filesystem::current_path());
 }
 
 const char* get_library_type(const std::string& value) {
@@ -151,11 +156,54 @@ void wc(const std::string& file, size_t& c, size_t& l) {
   wc(in, c, l);
 }
 
-TempFileGuard::TempFileGuard(const boost::filesystem::path& p) : mPath(p) {}
+std::string random_alnum(std::string::size_type length)
+{
+  static char chrs[] = "0123456789"
+                       "abcdefghijklmnopqrstuvwxyz"
+                       "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-TempFileGuard::~TempFileGuard() { boost::filesystem::remove_all(mPath); }
+  thread_local static std::mt19937 rg {std::random_device{}()};
+  thread_local static std::uniform_int_distribution<std::string::size_type> pick(0, sizeof(chrs) - 2);
 
-const boost::filesystem::path&TempFileGuard::path() const { return mPath; }
+  std::string s;
+  s.reserve(length);
+
+  while(length--)
+    s += chrs[pick(rg)];
+
+  return s;
+}
+
+std::string which(const std::string& executable, bool &found)
+{
+  found = executable.find('/') != std::string::npos;
+
+  if (found) {
+    return executable;
+  }
+
+  const std::vector<std::string> paths = split(getenv("PATH"), ':');
+  for(fs::path path : paths) {
+    if(path.native().empty())
+      path = ".";
+
+    auto candidate = path / executable;
+    if (!fs::is_regular_file(candidate))
+      continue;
+    if ((fs::status(candidate).permissions() & (fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec)) != fs::perms::none) {
+      found = true;
+      return candidate;
+    }
+  }
+
+  return {};
+}
+
+FileSystemGuard::FileSystemGuard(const std::filesystem::path& p) : mPath(p) {}
+
+FileSystemGuard::~FileSystemGuard() { std::filesystem::remove_all(mPath); }
+
+const std::filesystem::path&FileSystemGuard::path() const { return mPath; }
 
 namespace io {
 
