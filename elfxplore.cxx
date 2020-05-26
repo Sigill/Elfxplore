@@ -146,7 +146,11 @@ int main(int argc, char** argv)
     return -1;
   }
 
-  const bpo::parsed_options recognized_args = bpo::command_line_parser(argc, argv).options(opts).allow_unregistered().run();
+  const bpo::parsed_options recognized_args = bpo::command_line_parser(argc, argv)
+                                              .style(bpo::command_line_style::default_style & ~bpo::command_line_style::allow_guessing)
+                                              .options(opts)
+                                              .allow_unregistered()
+                                              .run();
   bpo::variables_map vm;
   bpo::store(recognized_args, vm);
   vm.notify();
