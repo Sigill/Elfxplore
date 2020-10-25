@@ -4,13 +4,12 @@
 
 #include <boost/process.hpp>
 
+#include <instrmt/instrmt.hxx>
+
 #include "utils.hxx"
-#include "instrumentation.hxx"
 #include "ThreadPool.hpp"
 
 namespace bp = boost::process;
-
-ITT_DOMAIN("elfxplore");
 
 namespace {
 
@@ -32,7 +31,7 @@ ProcessResult nm(const std::string& file,
                  const std::function<std::future<void>(std::istream&, SymbolReferenceSet&)>& async_parse_out,
                  const std::function<std::future<std::string>(std::istream&)>& async_parse_err)
 {
-  ITT_FUNCTION_TASK();
+  INSTRMT_FUNCTION();
 
   ProcessResult process;
   process.command = "nm " + options + " \"" + file + "\"";

@@ -16,13 +16,11 @@
 #include "nm.hxx"
 #include "ArtifactSymbols.hxx"
 
-#include "instrumentation.hxx"
+#include <instrmt/instrmt.hxx>
 
 namespace fs = std::filesystem;
 namespace bp = boost::process;
 namespace pt = boost::property_tree;
-
-ITT_DOMAIN("elfxplore");
 
 namespace {
 
@@ -121,7 +119,7 @@ void extract_symbols_from_file(const Artifact& artifact,
                                SymbolExtractionStatus& status,
                                const std::function<std::future<void>(std::istream& stream, SymbolReferenceSet& symbols)>& out_runner,
                                const std::function<std::future<std::string>(std::istream& stream)>& err_runner) {
-  ITT_FUNCTION_TASK();
+  INSTRMT_FUNCTION();
 
   const std::string& usable_path = artifact.name;
   const bool is_dynamic = artifact.type == "shared";
@@ -166,7 +164,7 @@ void import_commands(Database2& db,
                      std::istream& in,
                      const std::function<void (const std::string&, const CompilationCommand&)>& notify)
 {
-  ITT_FUNCTION_TASK();
+  INSTRMT_FUNCTION();
 
   std::string line;
   CompilationCommand cmd;
@@ -182,7 +180,7 @@ void import_compile_commands(Database2& db,
                              std::istream& in,
                              const std::function<void (const std::string&, const CompilationCommand&)>& notify)
 {
-  ITT_FUNCTION_TASK();
+  INSTRMT_FUNCTION();
 
   pt::ptree tree;
   pt::read_json(in, tree);
@@ -203,7 +201,7 @@ void import_compile_commands(Database2& db,
 
 void DependenciesExtractor::run(Database2& db)
 {
-  ITT_FUNCTION_TASK();
+  INSTRMT_REGION("DependenciesExtractor::run");
 
   const std::vector<fs::path> default_library_directories = load_default_library_directories();
 
@@ -264,7 +262,7 @@ SymbolExtractor::SymbolExtractor(size_t pool_size)
 
 void SymbolExtractor::run(Database2& db)
 {
-  ITT_FUNCTION_TASK();
+  INSTRMT_REGION("SymbolExtractor::run");
 
   auto q = db.statement("select id, name, type from artifacts where type not in (\"source\", \"static\")");
 

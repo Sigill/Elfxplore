@@ -12,6 +12,7 @@ find_package(SQLiteCpp REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(Shellwords 0.2 REQUIRED)
 find_package(Linemarkers 0.1 REQUIRED)
+find_package(Instrmt REQUIRED)
 
 include(ExternalProject)
 
@@ -44,20 +45,15 @@ set_target_properties(jhasse_ThreadPool PROPERTIES
     )
 add_dependencies(jhasse_ThreadPool jhasse_ThreadPool_project)
 
-
 option(ENABLE_INSTRUMENTATION "Enable internal log messages" OFF)
-if(ENABLE_INSTRUMENTATION)
-    set(INTELSEAPI_ROOT "" CACHE PATH "Root directory of IntelSEAPI")
-
-    add_library(ittnotify STATIC IMPORTED)
-
-    set_target_properties(ittnotify PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${INTELSEAPI_ROOT}/include"
-        IMPORTED_LINK_INTERFACE_LIBRARIES "Threads::Threads;dl"
-        IMPORTED_LOCATION "${INTELSEAPI_ROOT}/lib/libittnotify64.a"
-        INTERFACE_COMPILE_DEFINITIONS ENABLE_INSTRUMENTATION
-        )
-endif()
+function(target_link_instrmt tgt)
+    if (ENABLE_INSTRUMENTATION)
+        target_link_libraries(${tgt} PRIVATE instrmt)
+        target_compile_definitions(${tgt} PRIVATE INSTRMT_ENABLE)
+    else()
+        target_include_directories(${tgt} PRIVATE $<TARGET_PROPERTY:instrmt,INTERFACE_INCLUDE_DIRECTORIES>)
+    endif()
+endfunction()
 
 set(FILESYSTEM_LIBRARY "stdc++fs")
 
@@ -77,9 +73,7 @@ target_include_directories(elfxplore-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(elfxplore-core
     PUBLIC SQLiteCpp Boost::system Boost::program_options ${FILESYSTEM_LIBRARY}
     PRIVATE SQLite::SQLite3 Threads::Threads OpenMP::OpenMP_CXX shellwords jhasse_ThreadPool)
-if (ENABLE_INSTRUMENTATION)
-    target_link_libraries(elfxplore-core PRIVATE ittnotify)
-endif()
+target_link_instrmt(elfxplore-core)
 
 add_executable(elfxplore
     progressbar.cxx
@@ -95,9 +89,6 @@ target_include_directories(elfxplore PRIVATE ${TERMCOLOR_INCLUDE_DIR} ${jhasse_T
 target_link_libraries(elfxplore
     PRIVATE elfxplore-core Boost::system Boost::program_options
             Threads::Threads SQLiteCpp OpenMP::OpenMP_CXX shellwords linemarkers)
-if (ENABLE_INSTRUMENTATION)
-    target_link_libraries(elfxplore PRIVATE ittnotify)
-endif()
 
 include(CTest)
 
