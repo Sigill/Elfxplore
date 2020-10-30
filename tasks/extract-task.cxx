@@ -6,8 +6,6 @@
 #include <fstream>
 #include <filesystem>
 
-#include <boost/program_options.hpp>
-
 #include <termcolor/termcolor.hpp>
 
 #include "Database3.hxx"
@@ -20,12 +18,6 @@
 namespace bpo = boost::program_options;
 namespace fs = std::filesystem;
 
-namespace {
-
-
-
-} // anonymous namespace
-
 boost::program_options::options_description Extract_Task::options()
 {
   bpo::options_description opt("Options");
@@ -37,24 +29,20 @@ boost::program_options::options_description Extract_Task::options()
   return opt;
 }
 
-int Extract_Task::execute(const std::vector<std::string>& args)
+void Extract_Task::parse_args(const std::vector<std::string>& args)
 {
-  bpo::variables_map vm;
+  bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
+  bpo::notify(vm);
+}
 
-  try {
-    bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
-    bpo::notify(vm);
-  } catch(bpo::error &err) {
-    std::cerr << err.what() << std::endl;
-    return TaskStatus::ERROR;
-  }
-
+int Extract_Task::execute(Database3& db)
+{
   if (vm.count("dependencies")) {
-    db().load_dependencies();
+    db.load_dependencies();
   }
 
   if (vm.count("symbols")) {
-    db().load_symbols();
+    db.load_symbols();
   }
 
   return 0;

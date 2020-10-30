@@ -1,7 +1,6 @@
 #include "db-task.hxx"
 
 #include <iostream>
-#include <boost/program_options.hpp>
 
 #include "Database3.hxx"
 
@@ -18,28 +17,24 @@ boost::program_options::options_description DB_Task::options()
   return opt;
 }
 
-int DB_Task::execute(const std::vector<std::string>& args)
+void DB_Task::parse_args(const std::vector<std::string>& args)
 {
-  bpo::variables_map vm;
+  bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
+  bpo::notify(vm);
+}
 
-  try {
-    bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
-    bpo::notify(vm);
-  } catch(bpo::error &err) {
-    std::cerr << err.what() << std::endl;
-    return TaskStatus::ERROR;
-  }
-
+int DB_Task::execute(Database3& db)
+{
   if (vm.count("clear-symbols")) {
-    db().truncate_symbols();
+    db.truncate_symbols();
   }
 
   if (vm.count("optimize")) {
-    db().optimize();
+    db.optimize();
   }
 
   if (vm.count("vacuum")) {
-    db().vacuum();
+    db.vacuum();
   }
 
   return TaskStatus::SUCCESS;

@@ -5,8 +5,6 @@
 #include "Database3.hxx"
 #include "query-utils.hxx"
 
-#include <boost/program_options.hpp>
-
 namespace bpo = boost::program_options;
 
 boost::program_options::options_description Artifacts_Task::options()
@@ -24,18 +22,14 @@ boost::program_options::options_description Artifacts_Task::options()
   return opt;
 }
 
-int Artifacts_Task::execute(const std::vector<std::string>& args)
+void Artifacts_Task::parse_args(const std::vector<std::string>& args)
 {
-  bpo::variables_map vm;
+  bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
+  bpo::notify(vm);
+}
 
-  try {
-    bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
-    bpo::notify(vm);
-  } catch(bpo::error &err) {
-    std::cerr << err.what() << std::endl;
-    return TaskStatus::ERROR;
-  }
-
+int Artifacts_Task::execute(Database3& db)
+{
   const std::vector<std::string> included_types = vm["type"].as<std::vector<std::string>>(),
                                  excluded_types = vm["not-type"].as<std::vector<std::string>>();
 
@@ -57,7 +51,7 @@ int Artifacts_Task::execute(const std::vector<std::string>& args)
 
   ss << " order by type asc, name asc";
 
-  auto stm = db().statement(ss.str());
+  auto stm = db.statement(ss.str());
   while (stm.executeStep()) {
     std::cout << stm.getColumn(0).getString() << " : " << stm.getColumn(1).getString() << "\n";
   }

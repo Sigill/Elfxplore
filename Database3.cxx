@@ -96,8 +96,6 @@ Database3::Database3(const std::string& storage)
 void Database3::load_commands(const std::vector<std::string>& line_commands,
                               const std::vector<std::string>& compile_commands)
 {
-  LOG(info) << termcolor::blue << "Importing commands" << termcolor::reset;
-
   size_t count = 0UL;
   auto log = [&count](const std::string& line, const CompilationCommand& command){
     ++count;

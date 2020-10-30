@@ -9,7 +9,6 @@
 #include <map>
 #include <filesystem>
 
-#include <boost/program_options.hpp>
 #include <boost/process.hpp>
 #include <boost/asio.hpp>
 
@@ -356,6 +355,16 @@ and symbol_references.symbol_id in )" << in_expr(db.undefined_symbols(dependee_i
 //  return Database2::get_ids(useful_dependencies_stm);
 //}
 
+std::vector<std::string> get_useless_dependencies(Database2& db,
+                                                  const long long dependee_id)
+{
+  const std::vector<long long> useful_dependencies = get_useful_dependencies_simple1(db, dependee_id);
+
+  auto useless_dependencies = get_useless_dependencies(db, dependee_id, useful_dependencies);
+  std::sort(useless_dependencies.begin(), useless_dependencies.end());
+  return useless_dependencies;
+}
+
 std::vector<long long> get_generated_shared_libs_and_executables(Database2& db, const std::vector<std::string>& selection)
 {
   std::vector<long long> artifacts;
@@ -385,10 +394,7 @@ where generating_command_id is not NULL
 void analyse_useless_dependencies_symbols(Database2& db, const std::vector<long long>& artifacts)
 {
   for(const long long artifact_id : artifacts) {
-    const std::vector<long long> useful_dependencies = get_useful_dependencies_simple1(db, artifact_id);
-
-    std::vector<std::string> useless_dependencies = get_useless_dependencies(db, artifact_id, useful_dependencies);
-    std::sort(useless_dependencies.begin(), useless_dependencies.end());
+    const std::vector<std::string> useless_dependencies = get_useless_dependencies(db, artifact_id);
 
     LOG(debug || !useless_dependencies.empty())
         << termcolor::green << "Artifact " << artifact_id << termcolor::reset << " " << db.artifact_name_by_id(artifact_id);
@@ -884,50 +890,45 @@ boost::program_options::options_description Analyse_Task::options()
   return opt;
 }
 
-int Analyse_Task::execute(const std::vector<std::string>& args)
+void Analyse_Task::parse_args(const std::vector<std::string>& args)
 {
-  bpo::variables_map vm;
-
-  try {
-    bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
-    bpo::notify(vm);
-  } catch(bpo::error &err) {
-    std::cerr << err.what() << std::endl;
-    return TaskStatus::ERROR;
-  }
+  bpo::store(bpo::command_line_parser(args).options(options()).run(), vm);
+  bpo::notify(vm);
 
   if (vm.count("duplicated-symbols")
       + vm.count("undefined-symbols")
       + vm.count("useless-dependencies")
       + vm.count("command")
       + vm.count("includes") != 1) {
-    std::cerr << "Invalid analysis type" << std::endl;
-    return -1;
+    throw bpo::error("Invalid analysis type");
   }
+}
 
+int Analyse_Task::execute(Database3& db)
+{
   if (vm.count("duplicated-symbols")) {
-    db().load_symbols();
+    db.load_symbols();
 
-    analyse_duplicated_symbols(db(),
+    analyse_duplicated_symbols(db,
                                vm["type"].as<std::vector<std::string>>(),
                                vm["not-type"].as<std::vector<std::string>>(),
                                vm["category"].as<std::vector<std::string>>(),
                                vm["not-category"].as<std::vector<std::string>>());
   } else if (vm.count("undefined-symbols")) {
-    db().load_symbols();
+    db.load_symbols();
 
-    const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db(), vm["artifact"].as<std::vector<std::string>>());
-    analyse_undefined_symbols(db(), artifacts);
+    const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db, vm["artifact"].as<std::vector<std::string>>());
+    analyse_undefined_symbols(db, artifacts);
   } else if (vm.count("useless-dependencies")) {
-    db().load_dependencies();
+    db.load_dependencies();
 
     const auto mode = vm["useless-dependencies"].as<useless_dependencies_analysis_modes>();
-    const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db(), vm["artifact"].as<std::vector<std::string>>());
+    const std::vector<long long> artifacts = get_generated_shared_libs_and_executables(db, vm["artifact"].as<std::vector<std::string>>());
 
     if (mode == useless_dependencies_analysis_modes::symbols) {
-      analyse_useless_dependencies_symbols(db(), artifacts);
+      analyse_useless_dependencies_symbols(db, artifacts);
     } else if (mode == useless_dependencies_analysis_modes::ldd) {
-      analyse_useless_dependencies_ldd(db(), artifacts);
+      analyse_useless_dependencies_ldd(db, artifacts);
     }
   } else if (vm.count("command")) {
     const auto modes = expand_modes(vm["command"].as<std::vector<command_analysis_mode>>());
@@ -938,10 +939,10 @@ int Analyse_Task::execute(const std::vector<std::string>& args)
     ss << fs::current_path().string() << "/" << std::put_time(std::localtime(&now), "elfxplore-commands-%Y-%m-%d-%H-%M-%S.csv");
 
     std::ofstream out(ss.str());
-    analyse_commands(db(), modes, mNumThreads, out);
+    analyse_commands(db, modes, mNumThreads, out);
     out.close();
   } else if (vm.count("includes")) {
-    analyse_includes(db(), mNumThreads);
+    analyse_includes(db, mNumThreads);
   }
 
   return 0;

@@ -12,8 +12,6 @@
 #include <functional>
 #include <filesystem>
 
-#include <boost/program_options.hpp>
-
 #include <SQLiteCpp/Statement.h>
 
 #include "Database3.hxx"
@@ -336,6 +334,27 @@ void print(const std::map<long long, ArtifactData>& artifacts, const std::set<De
   }
 }
 
+enum class ExportFormat { txt, tlp, dot };
+
+void validate(boost::any& v,
+              const std::vector<std::string>& values,
+              ExportFormat* /*target_type*/, int)
+{
+  // Make sure no previous assignment to 'v' was made.
+  bpo::validators::check_first_occurrence(v);
+
+  const std::string& s = bpo::validators::get_single_string(values);
+
+  if (s == "txt")
+    v = boost::any(ExportFormat::txt);
+  else if (s == "tlp")
+    v = boost::any(ExportFormat::tlp);
+  else if (s == "dot")
+    v = boost::any(ExportFormat::dot);
+  else
+    throw bpo::invalid_option_value(s);
+}
+
 } // anonymous namespace
 
 boost::program_options::options_description Dependencies_Task::options()
@@ -352,7 +371,7 @@ boost::program_options::options_description Dependencies_Task::options()
        bpo::value<std::vector<std::string>>()->multitoken(),
        "Artifact to export.")
       ("format",
-       bpo::value<std::string>()->default_value("txt"),
+       bpo::value<ExportFormat>()->default_value(ExportFormat::txt, "txt"),
        "Export format: txt (default), tlp, dot.")
       ("dependencies", "Export dependencies.")
       ("dependees", "Export dependees.")
@@ -363,28 +382,23 @@ boost::program_options::options_description Dependencies_Task::options()
   return opt;
 }
 
-int Dependencies_Task::execute(const std::vector<std::string>& args)
+void Dependencies_Task::parse_args(const std::vector<std::string>& args)
 {
   bpo::positional_options_description p;
   p.add("artifact", -1);
 
-  bpo::variables_map vm;
-
-  try {
-    bpo::store(bpo::command_line_parser(args).options(options()).positional(p).run(), vm);
-    bpo::notify(vm);
-  } catch(bpo::error &err) {
-    std::cerr << err.what() << std::endl;
-    return TaskStatus::ERROR;
-  }
+  bpo::store(bpo::command_line_parser(args).options(options()).positional(p).run(), vm);
+  bpo::notify(vm);
 
   const std::string format = vm["format"].as<std::string>();
 
   if (!(format == "txt" || format == "tlp" || format == "dot")) {
-    std::cerr << "Invalid format: " << format << std::endl;
-    return TaskStatus::WRONG_ARGS;
+    throw bpo::invalid_option_value(format);
   }
+}
 
+int Dependencies_Task::execute(Database3& db)
+{
   const bool follow = vm.count("follow") > 0;
 
   const std::vector<std::string> included_types = vm["type"].as<std::vector<std::string>>(),
@@ -392,36 +406,37 @@ int Dependencies_Task::execute(const std::vector<std::string>& args)
 
   std::set<Dependency> dependencies;
 
-  db().load_dependencies();
+  db.load_dependencies();
 
   if (vm.count("artifact") == 0) {
-    get_all_dependencies(db(), included_types, excluded_types, dependencies);
+    get_all_dependencies(db, included_types, excluded_types, dependencies);
   } else {
     const bool export_dependencies = vm.count("dependencies") == vm.count("dependees") || vm.count("dependencies") == 1;
     const bool export_dependees = vm.count("dependencies") == vm.count("dependees") || vm.count("dependees") == 1;
 
     for(const std::string& artifact : vm["artifact"].as<std::vector<std::string>>())
     {
-      const long long id = db().artifact_id_by_name(artifact);
+      const long long id = db.artifact_id_by_name(artifact);
 
       if (follow) {
         if (export_dependencies)
-          get_all_dependencies_for(db(), id, included_types, excluded_types, dependencies);
+          get_all_dependencies_for(db, id, included_types, excluded_types, dependencies);
 
         if (export_dependees)
-          get_all_dependees_for(db(), id, included_types, excluded_types, dependencies);
+          get_all_dependees_for(db, id, included_types, excluded_types, dependencies);
       } else {
         if (export_dependencies)
-          get_dependencies_for(db(), id, included_types, excluded_types, dependencies);
+          get_dependencies_for(db, id, included_types, excluded_types, dependencies);
 
         if (export_dependees)
-          get_dependees_for(db(), id, included_types, excluded_types, dependencies);
+          get_dependees_for(db, id, included_types, excluded_types, dependencies);
       }
     }
   }
 
-  const std::map<long long, ArtifactData> artifacts = map_artifacts(db(), dependencies, vm.count("full-path") > 0);
+  const std::map<long long, ArtifactData> artifacts = map_artifacts(db, dependencies, vm.count("full-path") > 0);
 
+  const std::string format = vm["format"].as<std::string>();
   print(artifacts, dependencies, std::cout, format);
 
   return TaskStatus::SUCCESS;
