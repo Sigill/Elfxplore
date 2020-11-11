@@ -8,10 +8,9 @@
 
 #include <boost/program_options.hpp>
 
-#include <termcolor/termcolor.hpp>
-
 #include <SQLiteCpp/Transaction.h>
 
+#include <ansi.hxx>
 #include "logger.hxx"
 #include "Database3.hxx"
 #include "command-utils.hxx"
@@ -26,6 +25,8 @@
 #include "tasks/artifacts-task.hxx"
 
 namespace bpo = boost::program_options;
+using ::CTXLogger::severity_level;
+using ansi::style;
 
 namespace {
 #define COMMAND_FACTORY(T) [](){ return std::make_unique<T>(); }
@@ -126,11 +127,11 @@ void usage(std::ostream& out,
 
 } // anonymous namespace
 
-namespace logger {
+namespace CTXLogger {
 
 void validate(boost::any& v,
               const std::vector<std::string>& values,
-              ::logger::severity_level* /*target_type*/, int)
+              ::CTXLogger::severity_level* /*target_type*/, int)
 {
   // Make sure no previous assignment to 'v' was made.
   bpo::validators::check_first_occurrence(v);
@@ -138,25 +139,27 @@ void validate(boost::any& v,
   const std::string& s = bpo::validators::get_single_string(values);
 
   if (s == "trace")
-    v = boost::any(logger::trace);
+    v = boost::any(severity_level::trace);
   else if (s == "debug")
-    v = boost::any(logger::debug);
+    v = boost::any(severity_level::debug);
   else if (s == "info")
-    v = boost::any(logger::info);
+    v = boost::any(severity_level::info);
   else if (s == "warning")
-    v = boost::any(logger::warning);
+    v = boost::any(severity_level::warning);
   else if (s == "error")
-    v = boost::any(logger::error);
+    v = boost::any(severity_level::error);
   else if (s == "fatal")
-    v = boost::any(logger::fatal);
+    v = boost::any(severity_level::fatal);
   else
     throw bpo::invalid_option_value(s);
 }
 
-} // namespace logger
+} // namespace CTXLogger
 
 int main(int argc, char** argv)
 {
+  CTXLogger::ansi_support = ansi::is_atty(std::cerr);
+
   bool help = false;
   bool dryrun = false;
   std::string storage;
@@ -169,7 +172,7 @@ int main(int argc, char** argv)
        bpo::bool_switch(&help),
        "Produce help message.")
       ("verbose,v",
-       bpo::value<logger::severity_level>(&::logger::_severity_level)->default_value(logger::fatal, "fatal"),
+       bpo::value<CTXLogger::severity_level>(&CTXLogger::_severity_level)->default_value(CTXLogger::severity_level::warning, "warning"),
        "Verbosity level (trace, debug, info, warning, error, fatal).")
       ("dry-run,n",
        bpo::bool_switch(&dryrun),
@@ -224,9 +227,9 @@ int main(int argc, char** argv)
 
     if (help) {
       if (!task)
-        usage(std::cerr, argv[0], base_options);
+        usage(std::cout, argv[0], base_options);
       else
-        usage(std::cerr, argv[0], task_name, base_options, task->options());
+        usage(std::cout, argv[0], task_name, base_options, task->options());
 
       return 0;
     }
@@ -241,8 +244,6 @@ int main(int argc, char** argv)
 
     if (!line_commands.empty() || !compile_commands.empty())
     {
-      LOG(info) << termcolor::blue << "Loading commands" << termcolor::reset;
-
       db.load_commands(line_commands, compile_commands);
     }
 
@@ -258,7 +259,7 @@ int main(int argc, char** argv)
       db.optimize();
     }
   } catch (const bpo::error& ex) {
-    std::cerr << ex.what() << std::endl;
+    LOG(error) << ex.what();
     return -1;
   }
 }

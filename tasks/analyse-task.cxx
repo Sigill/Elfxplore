@@ -12,7 +12,7 @@
 #include <boost/process.hpp>
 #include <boost/asio.hpp>
 
-#include <termcolor/termcolor.hpp>
+#include <ansi.hxx>
 
 #include "infix_iterator.hxx"
 
@@ -32,6 +32,7 @@
 namespace bpo = boost::program_options;
 namespace fs = std::filesystem;
 namespace bp = boost::process;
+using ansi::style;
 
 namespace {
 
@@ -397,30 +398,30 @@ void analyse_useless_dependencies_symbols(Database2& db, const std::vector<long 
     const std::vector<std::string> useless_dependencies = get_useless_dependencies(db, artifact_id);
 
     LOG(debug || !useless_dependencies.empty())
-        << termcolor::green << "Artifact " << artifact_id << termcolor::reset << " " << db.artifact_name_by_id(artifact_id);
+        << style::green_fg << "Artifact " << artifact_id << style::reset << " " << db.artifact_name_by_id(artifact_id);
 
     if (LOG_ENABLED(debug)) {
       LOGGER << "Dynamic dependencies ";
       for(const long long dependency_id : get_shared_dependencies(db, artifact_id)) {
-        LOGGER << "\t" << termcolor::blue << dependency_id << termcolor::reset << " " << db.artifact_name_by_id(dependency_id);
+        LOGGER << "\t" << style::blue_fg << dependency_id << style::reset << " " << db.artifact_name_by_id(dependency_id);
       }
 
       const std::map<long long, std::vector<long long>> resolved_symbols = detail_useful_dependencies(db, artifact_id);
 
       for(const auto& useful_dependency : resolved_symbols) {
         const long long dependency_id = useful_dependency.first;
-        LOGGER << termcolor::green << "Artifact " << dependency_id << termcolor::reset << " " << db.artifact_name_by_id(dependency_id)
+        LOGGER << style::green_fg << "Artifact " << dependency_id << style::reset << " " << db.artifact_name_by_id(dependency_id)
                << " resolves symbols: ";
         const std::map<long long, std::string> symbols = get_symbol_hnames(db, useful_dependency.second);
         for(const auto& symbol : symbols) {
-          SLOGGER << "\t" << termcolor::blue << symbol.first << termcolor::reset << " " << symbol.second << std::endl;
+          LOGGER << "\t" << style::blue_fg << symbol.first << style::reset << " " << symbol.second << "\n";
         }
-        SLOGGER << std::endl;
+        LOGGER << "\n";
       }
     }
 
     if (!useless_dependencies.empty()) {
-      LOG(debug) << termcolor::green << "Useless dependencies:" << termcolor::reset;
+      LOG(debug) << style::green_fg << "Useless dependencies:" << style::reset;
 
       for(const std::string& ud : useless_dependencies) {
         LOG(always) << "\t" << ud;
@@ -472,13 +473,13 @@ void analyse_useless_dependencies_ldd(Database2& db, const std::vector<long long
 
     const std::string err = trim_copy(err_.get());
 
-    LOG(always && (!useless_dependencies.empty() || !err.empty())) << termcolor::green << "Artifact #" << artifact_id << termcolor::reset << " " << artifact;
+    LOG(always && (!useless_dependencies.empty() || !err.empty())) << style::green_fg << "Artifact #" << artifact_id << style::reset << " " << artifact;
 
     for(const std::string& ud : useless_dependencies) {
       LOG(always) << "\t" << ud;
     }
 
-    LOG(warning) << termcolor::red << "stderr: " << termcolor::reset << err;
+    LOG(warning) << style::red_fg << "stderr: " << style::reset << err;
   }
 }
 
@@ -687,7 +688,7 @@ void analyse_commands(Database2& db, const std::vector<command_analysis_mode>& m
 
     auto commands = get_object_commands(db);
 
-    ProgressBar progress;
+    ProgressBar progress("Compilation commands analysis");
     progress.start(commands.size());
 
 #pragma omp parallel for num_threads(num_threads) schedule(guided)
@@ -751,7 +752,7 @@ void analyse_commands(Database2& db, const std::vector<command_analysis_mode>& m
 
     auto commands = get_link_commands(db);
 
-    ProgressBar progress;
+    ProgressBar progress("Link command analysis");
     progress.start(commands.size());
 
 #pragma omp parallel for num_threads(num_threads) schedule(guided)
@@ -818,7 +819,7 @@ ProcessResult list_includes(const CompilationCommand& command,
 void analyse_includes(Database2& db, const unsigned int num_threads) {
   auto commands = get_object_commands(db);
 
-  ProgressBar progress;
+  ProgressBar progress("Include files analysis");
   progress.start(commands.size());
 
 #pragma omp parallel for num_threads(num_threads) schedule(guided)
@@ -830,10 +831,10 @@ void analyse_includes(Database2& db, const unsigned int num_threads) {
 #pragma omp critical
     {
       if (res.code == 0) {
-        LOG(always) << termcolor::green
+        LOG(always) << style::green_fg
                     << commands[i].directory << " "
                     << commands[i].executable << " "
-                    << commands[i].args << termcolor::reset;
+                    << commands[i].args << style::reset;
 
         preorder_walk(include_tree, [](const PreprocessedFile& file){
           LOGGER << io::repeat("| ", file.depth - 1)

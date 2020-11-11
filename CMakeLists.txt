@@ -16,18 +16,6 @@ find_package(Instrmt REQUIRED)
 
 include(ExternalProject)
 
-ExternalProject_Add(termcolor_project
-    GIT_REPOSITORY git://github.com/ikalnytskyi/termcolor.git
-    GIT_TAG v1.0.1
-
-    # Termcolor is a header-only library which means we need to
-    # neither configure nor build nor install it. Thus, noop
-    # the hooks.
-    CONFIGURE_COMMAND "" BUILD_COMMAND "" INSTALL_COMMAND "")
-ExternalProject_Get_Property(termcolor_project SOURCE_DIR)
-set(TERMCOLOR_INCLUDE_DIR ${SOURCE_DIR}/include)
-
-
 ExternalProject_Add(jhasse_ThreadPool_project
     GIT_REPOSITORY git://github.com/jhasse/ThreadPool.git
     GIT_TAG e9123ff
@@ -67,6 +55,7 @@ add_library(elfxplore-core STATIC
     query-utils.cxx
     command-utils.cxx
     database-utils.cxx
+    ansi.cxx
 )
 add_dependencies(elfxplore-core jhasse_ThreadPool)
 target_include_directories(elfxplore-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -85,7 +74,7 @@ add_executable(elfxplore
     tasks/analyse-task.cxx
     tasks/artifacts-task.cxx
     elfxplore.cxx)
-target_include_directories(elfxplore PRIVATE ${TERMCOLOR_INCLUDE_DIR} ${jhasse_ThreadPool_DIR})
+target_include_directories(elfxplore PRIVATE ${jhasse_ThreadPool_DIR})
 target_link_libraries(elfxplore
     PRIVATE elfxplore-core Boost::system Boost::program_options
             Threads::Threads SQLiteCpp OpenMP::OpenMP_CXX shellwords linemarkers)

@@ -2,7 +2,7 @@
 
 #include <fstream>
 
-#include <termcolor/termcolor.hpp>
+#include <ansi.hxx>
 
 #include "logger.hxx"
 #include "command-utils.hxx"
@@ -10,56 +10,53 @@
 #include "nm.hxx"
 #include "progressbar.hxx"
 
+using ansi::style;
+
 namespace {
 
 void log_command(const std::string& line, const CompilationCommand& command) {
-  LOG(debug || !command.is_complete())
-      << termcolor::green << "Processing command " << termcolor::reset << line;
+  LOG_CTX() << style::green_fg << "Processing command " << style::reset << line;
 
   if (command.directory.empty() || command.executable.empty() || command.args.empty()) {
-    LOG(always) << termcolor::red << "Error: not enough arguments" << termcolor::reset;
+    LOG(error) << style::red_fg << "Error: not enough arguments" << style::reset;
     return;
   }
 
   if (command.output.empty()) {
-    LOG(always) << termcolor::red << "Error: no output identified" << termcolor::reset;
+    LOG(error) << style::red_fg << "Error: no output identified" << style::reset;
     return;
   }
 
-  if (command.output_type.empty()) {
-    LOG(trace) << "Output type: " << command.output_type;
-  }
-
-  LOG(debug) << termcolor::blue << "Directory: " << termcolor::reset << command.directory;
-  LOG(debug) << termcolor::blue << "Output: "  << termcolor::reset << "(" << command.output_type << ") " << command.output;
+  LOG(debug) << style::blue_fg << "Directory: " << style::reset << command.directory;
+  LOG(debug) << style::blue_fg << "Output:    " << style::reset << command.output << " (" << command.output_type << ") " << command.output;
 }
 
 void log_dependencies(const CompilationCommand& cmd,
                       const std::vector<Artifact>& dependencies,
                       const std::vector<std::string>& errors) {
-  LOG(debug || !errors.empty()) << termcolor::green << "Command #" << cmd.id << termcolor::reset
+  LOG(debug || !errors.empty()) << style::green_fg << "Command #" << cmd.id << style::reset
                                << " " << cmd.directory << " " << cmd.executable << " " << cmd.args;
 
   for(const std::string& err : errors) {
-    LOG(always) << termcolor::red << "Error: " << termcolor::reset << err;
+    LOG(always) << style::red_fg << "Error: " << style::reset << err;
   }
 
-  LOG(trace) << termcolor::blue << ">" << termcolor::reset << " (" << cmd.output_type << ") " << cmd.artifact_id << " " << cmd.output;
+  LOG(trace) << style::blue_fg << ">" << style::reset << " (" << cmd.output_type << ") " << cmd.artifact_id << " " << cmd.output;
 
   for (const Artifact& dependency : dependencies) {
-    LOG(trace) << termcolor::yellow << "<" << termcolor::reset << " (" << dependency.type << ") " << dependency.id << " " << dependency.name;
+    LOG(trace) << style::yellow_fg << "<" << style::reset << " (" << dependency.type << ") " << dependency.id << " " << dependency.name;
   }
 }
 
 void log_symbols(const Artifact& artifact, const SymbolExtractionStatus& status) {
-  LOG(debug || has_failure(status)) << termcolor::green << "Artifact #" << artifact.id << termcolor::reset << " " << artifact.name;
+  LOG(debug || has_failure(status)) << style::green_fg << "Artifact #" << artifact.id << style::reset << " " << artifact.name;
 
-  LOG(error && status.linker_script) << termcolor::red << "Linker scripts are not supported" << termcolor::reset;
+  LOG(error && status.linker_script) << style::red_fg << "Linker scripts are not supported" << style::reset;
 
   for(const ProcessResult& process : status.processes) {
     LOG(error && failed(process)) << process.command;
-    LOG(error && process.code != 0) << "Status: " << termcolor::red << (int)process.code << termcolor::reset;
-    LOG(error && !process.err.empty()) << termcolor::red << "stderr: " << termcolor::reset << process.err;
+    LOG(error && process.code != 0) << "Status: " << style::red_fg << (int)process.code << style::reset;
+    LOG(error && !process.err.empty()) << style::red_fg << "stderr: " << style::reset << process.err;
   }
 }
 
@@ -96,6 +93,8 @@ Database3::Database3(const std::string& storage)
 void Database3::load_commands(const std::vector<std::string>& line_commands,
                               const std::vector<std::string>& compile_commands)
 {
+  LOG(info) << style::blue_fg << "Loading commands" << style::reset;
+
   size_t count = 0UL;
   auto log = [&count](const std::string& line, const CompilationCommand& command){
     ++count;
@@ -116,7 +115,7 @@ void Database3::load_commands(const std::vector<std::string>& line_commands,
     import_compile_commands(*this, in, log);
   }
 
-  LOG(info) << termcolor::green << count << " commands imported" << termcolor::reset << " " << artifacts_stats(*this);
+  LOG(info) << style::green_fg << count << " commands imported" << style::reset << " " << artifacts_stats(*this);
 
   set_timestamp("import-commands",
                 std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count());
@@ -124,17 +123,17 @@ void Database3::load_commands(const std::vector<std::string>& line_commands,
 
 void Database3::load_dependencies()
 {
-  LOG(info) << termcolor::blue << "Extracting dependencies" << termcolor::reset;
-
   const long long date_import_commands = get_timestamp("import-commands");
   const long long date_extract_dependencies = get_timestamp("extract-dependencies");
   if (date_extract_dependencies > date_import_commands) {
-    LOG(info) << "Dependencies table is up to date";
+    LOG(debug) << "Dependencies table is up to date";
     return;
   }
 
+  LOG_CTX() << style::blue_fg << "Extracting dependencies" << style::reset;
+
   DependenciesExtractor e;
-  ProgressBar progress;
+  ProgressBar progress("Dependency extraction");
   e.notifyTotalSteps = [&progress](const size_t size){ progress.start(size); };
   e.notifyStep = [&progress](const CompilationCommand& cmd, const std::vector<Artifact>& dependencies, const std::vector<std::string>& errors){
     log_dependencies(cmd, dependencies, errors);
@@ -153,8 +152,6 @@ void Database3::load_symbols()
 {
   load_dependencies();
 
-  LOG(info) << termcolor::blue << "Extracting symbols" << termcolor::reset;
-
   const long long date_extract_dependencies = get_timestamp("extract-dependencies");
   const long long date_extract_symbols = get_timestamp("extract-symbols");
   if (date_extract_symbols > date_extract_dependencies) {
@@ -162,8 +159,10 @@ void Database3::load_symbols()
     return;
   }
 
+  LOG_CTX() << style::blue_fg << "Extracting symbols" << style::reset;
+
   SymbolExtractor e(4);
-  ProgressBar progress;
+  ProgressBar progress("Symbol extraction");
   e.notifyTotalSteps = [&progress](const size_t size){ progress.start(size); };
   e.notifyStep = [&progress](const Artifact& artifact, const SymbolExtractionStatus& status){
     log_symbols(artifact, status);

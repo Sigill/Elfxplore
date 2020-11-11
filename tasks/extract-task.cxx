@@ -6,8 +6,6 @@
 #include <fstream>
 #include <filesystem>
 
-#include <termcolor/termcolor.hpp>
-
 #include "Database3.hxx"
 #include "utils.hxx"
 #include "command-utils.hxx"

@@ -9,6 +9,7 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
 
+#include "ansi.hxx"
 #include "Database2.hxx"
 #include "logger.hxx"
 #include "command-utils.hxx"
@@ -21,6 +22,7 @@
 namespace fs = std::filesystem;
 namespace bp = boost::process;
 namespace pt = boost::property_tree;
+using ansi::style;
 
 namespace {
 
@@ -51,6 +53,8 @@ void import_command(Database2& db,
 }
 
 std::vector<fs::path> load_default_library_directories() {
+  LOG_CTX() << style::blue_fg << "Extracting system libraries potential locations" << style::reset;
+
   bp::ipstream pipe_stream;
   bp::child c("gcc --print-search-dir", bp::std_out > pipe_stream, bp::std_err > bp::null);
 
