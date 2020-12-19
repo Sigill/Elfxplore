@@ -6,13 +6,14 @@
 #include <string>
 #include <vector>
 
+class CompilationCommand;
+
 class Database3 : public Database2
 {
 public:
   explicit Database3(const std::string& storage);
 
-  void load_commands(const std::vector<std::string>& line_commands,
-                     const std::vector<std::string>& compile_commands);
+  void import_command(const CompilationCommand& cmd);
 
   void load_dependencies();
 

@@ -1,6 +1,7 @@
 #ifndef COMMANDUTILS_HXX
 #define COMMANDUTILS_HXX
 
+#include <functional>
 #include <string>
 #include <vector>
 #include <set>
@@ -31,6 +32,12 @@ namespace parse_command_options {
 };
 
 void parse_command(const std::string& line, CompilationCommand& command, const int options = parse_command_options::with_directory | parse_command_options::expand_path);
+
+void parse_commands(std::istream& in,
+                    const std::function<void (size_t, const std::string&, const CompilationCommand&)>& notify);
+
+void parse_compile_commands(std::istream& in,
+                            const std::function<void(size_t, const std::string&, const CompilationCommand&)>& notify);
 
 class Dependencies {
 public:

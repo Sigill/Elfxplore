@@ -33,7 +33,7 @@ void Extract_Task::parse_args(const std::vector<std::string>& args)
   bpo::notify(vm);
 }
 
-int Extract_Task::execute(Database3& db)
+void Extract_Task::execute(Database3& db)
 {
   if (vm.count("dependencies")) {
     db.load_dependencies();
@@ -42,6 +42,4 @@ int Extract_Task::execute(Database3& db)
   if (vm.count("symbols")) {
     db.load_symbols();
   }
-
-  return 0;
 }

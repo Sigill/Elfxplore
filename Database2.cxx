@@ -463,11 +463,11 @@ long long Database2::get_timestamp(const std::string& name)
   return time;
 }
 
-void Database2::set_timestamp(const std::string& name, const long long time)
+void Database2::set_timestamp(const std::string& name, const std::chrono::high_resolution_clock::time_point& time)
 {
   auto stm = statement("insert into timestamps (name, time) values (?, ?) on conflict (name) do update set time=excluded.time");
 
   stm.bind(1, name);
-  stm.bind(2, time);
+  stm.bind(2, std::chrono::duration_cast<std::chrono::milliseconds>(time.time_since_epoch()).count());
   stm.exec();
 }

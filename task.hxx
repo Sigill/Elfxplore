@@ -10,11 +10,6 @@
 
 class Database3;
 
-enum TaskStatus {
-  ERROR = -1,
-  SUCCESS = 0
-};
-
 class Task
 {
 private:
@@ -28,7 +23,7 @@ public:
 
   virtual void parse_args(const std::vector<std::string>& args) = 0;
 
-  virtual int execute(Database3& db) = 0;
+  virtual void execute(Database3& db) = 0;
 };
 
 #endif // COMMAND_HXX

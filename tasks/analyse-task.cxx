@@ -12,7 +12,7 @@
 #include <boost/process.hpp>
 #include <boost/asio.hpp>
 
-#include <ansi.hxx>
+#include "ansi.hxx"
 
 #include "infix_iterator.hxx"
 
@@ -655,10 +655,10 @@ void print(csv::printer& csv,
 }
 
 void log_command_error(const std::string& directory, const ProcessResult& res) {
-  LOG(always) << directory;
-  LOG(always) << res.command;
-  LOG(always) << (int)res.code;
-  LOG(always) << res.err;
+  LOG(error) << directory;
+  LOG(error) << res.command;
+  LOG(error) << (int)res.code;
+  LOG(error) << res.err;
 }
 
 void analyse_commands(Database2& db, const std::vector<command_analysis_mode>& modes, const unsigned int num_threads, std::ostream& out) {
@@ -678,13 +678,15 @@ void analyse_commands(Database2& db, const std::vector<command_analysis_mode>& m
   if (analyse_compile_time || analyse_link_time)
     columns.emplace_back("command-time");
 
+  LOG_CTX() << "Analysing commands";
+
   csv::printer csv = csv::printer(out);
   csv << "inputs" << "output";
   for(const std::string& c : columns) csv << c;
   csv << "directory" << "command" << csv::endrow;
 
   if (analyse_source || analyse_preprocessor_count || analyse_preprocessor_time || analyse_compile_time) {
-    LOG(always) << "Analysing compilation commands";
+    LOG_CTX() << "Analysing compilation commands";
 
     auto commands = get_object_commands(db);
 
@@ -748,7 +750,7 @@ void analyse_commands(Database2& db, const std::vector<command_analysis_mode>& m
   }
 
   if (analyse_link_time) {
-    LOG(always) << "Analysing link commands";
+    LOG_CTX() << "Analysing link commands";
 
     auto commands = get_link_commands(db);
 
@@ -817,6 +819,8 @@ ProcessResult list_includes(const CompilationCommand& command,
 }
 
 void analyse_includes(Database2& db, const unsigned int num_threads) {
+  LOG_CTX() << style::blue_fg << "Analysing include files" << style::reset;
+
   auto commands = get_object_commands(db);
 
   ProgressBar progress("Include files analysis");
@@ -831,15 +835,15 @@ void analyse_includes(Database2& db, const unsigned int num_threads) {
 #pragma omp critical
     {
       if (res.code == 0) {
-        LOG(always) << style::green_fg
-                    << commands[i].directory << " "
-                    << commands[i].executable << " "
-                    << commands[i].args << style::reset;
+        std::cout << style::green_fg
+                  << commands[i].directory << " "
+                  << commands[i].executable << " "
+                  << commands[i].args << style::reset << std::endl;
 
         preorder_walk(include_tree, [](const PreprocessedFile& file){
-          LOGGER << io::repeat("| ", file.depth - 1)
-                 << file.included_at_line << " "
-                 << file.filename << " (" << file.lines_count << " / " << file.cumulated_lines_count << " lines)";
+          std::cout << io::repeat("| ", file.depth - 1)
+                    << file.included_at_line << " "
+                    << file.filename << " (" << file.lines_count << " / " << file.cumulated_lines_count << " lines)" << std::endl;
         });
       } else {
         log_command_error(commands[i].directory, res);
@@ -905,7 +909,7 @@ void Analyse_Task::parse_args(const std::vector<std::string>& args)
   }
 }
 
-int Analyse_Task::execute(Database3& db)
+void Analyse_Task::execute(Database3& db)
 {
   if (vm.count("duplicated-symbols")) {
     db.load_symbols();
@@ -945,6 +949,4 @@ int Analyse_Task::execute(Database3& db)
   } else if (vm.count("includes")) {
     analyse_includes(db, mNumThreads);
   }
-
-  return 0;
 }

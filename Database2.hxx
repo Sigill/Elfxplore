@@ -1,6 +1,7 @@
 #ifndef DATABASE2_HXX
 #define DATABASE2_HXX
 
+#include <chrono>
 #include <vector>
 #include <map>
 #include <string>
@@ -155,7 +156,7 @@ public:
 
   long long get_timestamp(const std::string& name);
 
-  void set_timestamp(const std::string& name, const long long time);
+  void set_timestamp(const std::string& name, const std::chrono::high_resolution_clock::time_point& time);
 
   static long long get_id(SQLite::Statement& stm);
   static std::vector<long long> get_ids(SQLite::Statement& stm);

@@ -3,11 +3,15 @@
 #include <sstream>
 #include <algorithm>
 
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/json_parser.hpp>
 #include <shellwords/shellwords.hxx>
+#include <instrmt/instrmt.hxx>
 
 #include "utils.hxx"
 
 namespace fs = std::filesystem;
+namespace pt = boost::property_tree;
 
 namespace {
 
@@ -34,6 +38,16 @@ void parse_ar_args(shellwords::shell_splitter& splitter, CompilationCommand& com
 }
 
 const std::vector<std::string> gcc_commands = {"cc", "c++", "gcc", "g++"};
+
+void clear(CompilationCommand& cmd)
+{
+  cmd.id = -1;
+  cmd.directory.clear();
+  cmd.executable.clear();
+  cmd.args.clear();
+  cmd.output.clear();
+  cmd.output_type.clear();
+}
 
 } // anonymous namespace
 
@@ -295,4 +309,44 @@ std::string redirect_ar_output(const CompilationCommand& command, const std::str
   }
 
   return ss.str();
+}
+
+void parse_commands(std::istream& in, const std::function<void (size_t, const std::string&, const CompilationCommand&)>& notify)
+{
+  INSTRMT_FUNCTION();
+
+  std::string line;
+  CompilationCommand cmd;
+  size_t item = 0UL;
+
+  while (std::getline(in, line) && !line.empty()) {
+    clear(cmd);
+    parse_command(line, cmd);
+    notify(item, line, cmd);
+    ++item;
+  }
+}
+
+void parse_compile_commands(std::istream& in, const std::function<void (size_t, const std::string&, const CompilationCommand&)>& notify)
+{
+  INSTRMT_FUNCTION();
+
+  pt::ptree tree;
+  try { pt::read_json(in, tree); }
+  catch (...) { std::throw_with_nested(std::runtime_error("Unable to parse JSON")); }
+
+  CompilationCommand cmd;
+  size_t item = 0UL;
+
+  for(const pt::ptree::value_type& entry : tree) {
+    clear(cmd);
+
+    const auto& data = entry.second;
+    cmd.directory = data.get_child("directory").data();
+    const std::string line = data.get_child("command").data();
+    parse_command(line, cmd, parse_command_options::expand_path);
+
+    notify(item, line, cmd);
+    ++item;
+  }
 }

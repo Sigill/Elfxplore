@@ -2,8 +2,8 @@
 
 #include <fstream>
 
-#include <ansi.hxx>
-
+#include "ansi.hxx"
+#include "command-utils.hxx"
 #include "logger.hxx"
 #include "command-utils.hxx"
 #include "database-utils.hxx"
@@ -13,23 +13,6 @@
 using ansi::style;
 
 namespace {
-
-void log_command(const std::string& line, const CompilationCommand& command) {
-  LOG_CTX() << style::green_fg << "Processing command " << style::reset << line;
-
-  if (command.directory.empty() || command.executable.empty() || command.args.empty()) {
-    LOG(error) << style::red_fg << "Error: not enough arguments" << style::reset;
-    return;
-  }
-
-  if (command.output.empty()) {
-    LOG(error) << style::red_fg << "Error: no output identified" << style::reset;
-    return;
-  }
-
-  LOG(debug) << style::blue_fg << "Directory: " << style::reset << command.directory;
-  LOG(debug) << style::blue_fg << "Output:    " << style::reset << command.output << " (" << command.output_type << ") " << command.output;
-}
 
 void log_dependencies(const CompilationCommand& cmd,
                       const std::vector<Artifact>& dependencies,
@@ -90,35 +73,13 @@ Database3::Database3(const std::string& storage)
   : Database2(storage)
 {}
 
-void Database3::load_commands(const std::vector<std::string>& line_commands,
-                              const std::vector<std::string>& compile_commands)
+void Database3::import_command(const CompilationCommand& cmd)
 {
-  LOG(info) << style::blue_fg << "Loading commands" << style::reset;
+  const long long command_id = create_command(cmd.directory, cmd.executable, cmd.args);
 
-  size_t count = 0UL;
-  auto log = [&count](const std::string& line, const CompilationCommand& command){
-    ++count;
-    log_command(line, command);
-  };
-
-  for(const std::string& command : line_commands) {
-    if (command == "-") {
-      import_commands(*this, std::cin, log);
-    } else {
-      std::ifstream in(command);
-      import_commands(*this, in, log);
-    }
+  if (-1 == artifact_id_by_name(cmd.output)) {
+    create_artifact(cmd.output, cmd.output_type, command_id);
   }
-
-  for(const std::string& input : compile_commands) {
-    std::ifstream in(input);
-    import_compile_commands(*this, in, log);
-  }
-
-  LOG(info) << style::green_fg << count << " commands imported" << style::reset << " " << artifacts_stats(*this);
-
-  set_timestamp("import-commands",
-                std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count());
 }
 
 void Database3::load_dependencies()
@@ -144,8 +105,7 @@ void Database3::load_dependencies()
   LOG(info) << artifacts_stats(*this);
   LOG(info) << count_dependencies() << " dependencies";
 
-  set_timestamp("extract-dependencies",
-                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count());
+  set_timestamp("extract-dependencies", std::chrono::high_resolution_clock::now());
 }
 
 void Database3::load_symbols()
@@ -172,6 +132,5 @@ void Database3::load_symbols()
 
   LOG(info) << count_symbols() << " symbols (" << count_symbol_references() << " references)";
 
-  set_timestamp("extract-symbols",
-                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count());
+  set_timestamp("extract-symbols", std::chrono::high_resolution_clock::now());
 }

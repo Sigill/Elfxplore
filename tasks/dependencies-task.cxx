@@ -397,7 +397,7 @@ void Dependencies_Task::parse_args(const std::vector<std::string>& args)
   }
 }
 
-int Dependencies_Task::execute(Database3& db)
+void Dependencies_Task::execute(Database3& db)
 {
   const bool follow = vm.count("follow") > 0;
 
@@ -438,6 +438,4 @@ int Dependencies_Task::execute(Database3& db)
 
   const std::string format = vm["format"].as<std::string>();
   print(artifacts, dependencies, std::cout, format);
-
-  return TaskStatus::SUCCESS;
 }

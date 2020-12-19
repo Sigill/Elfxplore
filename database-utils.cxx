@@ -5,10 +5,6 @@
 #include <filesystem>
 #include <omp.h>
 
-#include <boost/process.hpp>
-#include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/json_parser.hpp>
-
 #include "ansi.hxx"
 #include "Database2.hxx"
 #include "logger.hxx"
@@ -17,40 +13,14 @@
 #include "nm.hxx"
 #include "ArtifactSymbols.hxx"
 
+#include <boost/process.hpp>
 #include <instrmt/instrmt.hxx>
 
 namespace fs = std::filesystem;
 namespace bp = boost::process;
-namespace pt = boost::property_tree;
 using ansi::style;
 
 namespace {
-
-void clear(CompilationCommand& cmd)
-{
-  cmd.id = -1;
-  cmd.directory.clear();
-  cmd.executable.clear();
-  cmd.args.clear();
-  cmd.output.clear();
-  cmd.output_type.clear();
-}
-
-void import_command(Database2& db,
-                    const std::string& line,
-                    const CompilationCommand& cmd,
-                    const std::function<void (const std::string&, const CompilationCommand&)>& notify)
-{
-  notify(line, cmd);
-
-  if (cmd.is_complete()) {
-    const long long command_id = db.create_command(cmd.directory, cmd.executable, cmd.args);
-
-    if (-1 == db.artifact_id_by_name(cmd.output)) {
-      db.create_artifact(cmd.output, cmd.output_type, command_id);
-    }
-  }
-}
 
 std::vector<fs::path> load_default_library_directories() {
   LOG_CTX() << style::blue_fg << "Extracting system libraries potential locations" << style::reset;
@@ -154,54 +124,6 @@ void extract_symbols_from_file(const Artifact& artifact,
 }
 
 } // anonymous namespace
-
-void import_command(Database2& db,
-                    const std::string& line,
-                    const std::function<void (const std::string&, const CompilationCommand&)>& notify)
-{
-  CompilationCommand cmd;
-  parse_command(line, cmd);
-  import_command(db, line, cmd, notify);
-}
-
-void import_commands(Database2& db,
-                     std::istream& in,
-                     const std::function<void (const std::string&, const CompilationCommand&)>& notify)
-{
-  INSTRMT_FUNCTION();
-
-  std::string line;
-  CompilationCommand cmd;
-
-  while (std::getline(in, line) && !line.empty()) {
-    clear(cmd);
-    parse_command(line, cmd);
-    import_command(db, line, cmd, notify);
-  }
-}
-
-void import_compile_commands(Database2& db,
-                             std::istream& in,
-                             const std::function<void (const std::string&, const CompilationCommand&)>& notify)
-{
-  INSTRMT_FUNCTION();
-
-  pt::ptree tree;
-  pt::read_json(in, tree);
-
-  CompilationCommand cmd;
-
-  for(const pt::ptree::value_type& entry : tree) {
-    clear(cmd);
-
-    const auto& data = entry.second;
-    cmd.directory = data.get_child("directory").data();
-    const std::string line = data.get_child("command").data();
-    parse_command(line, cmd, parse_command_options::expand_path);
-
-    import_command(db, line, cmd, notify);
-  }
-}
 
 void DependenciesExtractor::run(Database2& db)
 {

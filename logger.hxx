@@ -23,6 +23,12 @@ enum class severity_level
   always
 };
 
+extern severity_level _severity_level;
+
+inline bool log_enabled(const severity_level lvl) {
+  return _severity_level <= lvl;
+}
+
 class Message {
 private:
   std::stringstream ss;
@@ -78,20 +84,20 @@ public:
   ContextMessage() noexcept = default;
   ContextMessage(std::string message) noexcept : message(std::move(message)) {}
   ContextMessage(const ContextMessage&) = delete;
-  ContextMessage(ContextMessage&& other)
+  ContextMessage(ContextMessage&& other) noexcept
     : message(std::move(other.message))
     , consumed(std::exchange(other.consumed, true))
   {}
   ContextMessage& operator=(const ContextMessage&) = delete;
-  ContextMessage& operator=(ContextMessage&& other) {
+  ContextMessage& operator=(ContextMessage&& other) noexcept {
     message = std::move(other.message);
     consumed = std::exchange(other.consumed, true);
     return *this;
   }
 
-  bool isConsumed() const { return consumed; }
+  bool isConsumed() const noexcept { return consumed; }
 
-  std::string getMessage() {
+  std::string getMessage() noexcept {
     consumed = true;
     return std::move(message);
   }
@@ -105,12 +111,22 @@ private:
   std::shared_ptr<ContextMessage> message;
 
 public:
-  ContextMessageGuard(Logger& logger, std::shared_ptr<ContextMessage> message) noexcept : logger(logger), message(std::move(message)) {}
+  ContextMessageGuard(Logger& logger, std::shared_ptr<ContextMessage> message) noexcept;
   ContextMessageGuard(const ContextMessageGuard&) = delete;
-  ContextMessageGuard(ContextMessageGuard&&) = default;
+  ContextMessageGuard(ContextMessageGuard&&) noexcept = default;
   ContextMessageGuard& operator=(const ContextMessageGuard&) = delete;
   ContextMessageGuard& operator=(ContextMessageGuard&&) = delete;
   ~ContextMessageGuard() noexcept;
+};
+
+class ContextMessageGuardFactory {
+private:
+  Logger& logger;
+  bool flush_immediately;
+
+public:
+  ContextMessageGuardFactory(Logger& logger, bool flush_immediately = false) : logger(logger), flush_immediately(flush_immediately) {}
+  ContextMessageGuard operator<<=(std::string message);
 };
 
 class Logger {
@@ -125,7 +141,7 @@ public:
     this->sink = std::move(sink);
   }
 
-  ContextMessageGuard operator%=(std::string message) {
+  ContextMessageGuard make_guard(std::string message) {
     return ContextMessageGuard(*this,
                                context.emplace_back(
                                  std::make_shared<ContextMessage>(
@@ -135,27 +151,27 @@ public:
                               );
   }
 
+  ContextMessageGuard operator%=(std::string message) {
+    return make_guard(std::move(message));
+  }
+
   void log(const std::string& m);
 
   void log(const char* m);
 
-   void operator|(const std::string& m);
+  void operator|(const std::string& m);
 
-   void operator|(const char* m);
+  void operator|(const char* m);
 
-   void flush();
+  void log_exception(const std::exception& ex, std::size_t depth = 0);
+
+  void flush();
 
 private:
   void pop_context();
 
   friend ContextMessageGuard;
 };
-
-extern severity_level _severity_level;
-
-inline bool log_enabled(const severity_level lvl) {
-  return _severity_level <= lvl;
-}
 
 extern Logger logger;
 
@@ -176,11 +192,8 @@ inline std::ostream& configure_ansi_support(std::ostream& os) {
 
 #define LOGGER ::CTXLogger::logger | ::CTXLogger::Message() << ::CTXLogger::configure_ansi_support
 
-#define LOG_CTX() \
-  [[maybe_unused]] const ::CTXLogger::ContextMessageGuard LOG_CONCAT(__context_message_guard, __LINE__) = ::CTXLogger::logger %= ::CTXLogger::Message() << ::CTXLogger::configure_ansi_support
+#define LOG_FLUSH() ::CTXLogger::logger.flush()
 
-#define LOG_CTX_STR(message) \
-  [[maybe_unused]] const ::CTXLogger::ContextMessageGuard LOG_CONCAT(__context_message_guard, __LINE__) = ::CTXLogger::logger %= message
 
 #define LOG(lvl) \
   for(bool live = ::CTXLogger::_severity_level <= ::CTXLogger::severity_level::lvl; live; live = false) \
@@ -190,6 +203,57 @@ inline std::ostream& configure_ansi_support(std::ostream& os) {
   for(bool live = ::CTXLogger::_severity_level <= ::CTXLogger::severity_level::lvl; live; live = false) \
     ::CTXLogger::logger.log(message)
 
-#define LOG_FLUSH() ::CTXLogger::logger.flush()
+
+#define LOG_CTX() \
+  [[maybe_unused]] const ::CTXLogger::ContextMessageGuard LOG_CONCAT(__context_message_guard, __LINE__) = \
+  ::CTXLogger::ContextMessageGuardFactory(::CTXLogger::logger) <<= ::CTXLogger::Message() << ::CTXLogger::configure_ansi_support
+
+#define LOG_CTX_STR(message) \
+  [[maybe_unused]] const ::CTXLogger::ContextMessageGuard LOG_CONCAT(__context_message_guard, __LINE__) = \
+  ::CTXLogger::ContextMessageGuardFactory(::CTXLogger::logger) <<= message
+
+
+#define LOG_CTX_FLUSH(lvl) \
+  [[maybe_unused]] const ::CTXLogger::ContextMessageGuard LOG_CONCAT(__context_message_guard, __LINE__) = \
+  ::CTXLogger::ContextMessageGuardFactory(::CTXLogger::logger, ::CTXLogger::_severity_level <= ::CTXLogger::severity_level::lvl) <<= ::CTXLogger::Message() << ::CTXLogger::configure_ansi_support
+
+#define LOG_CTX_STR_FLUSH(lvl, message) \
+  [[maybe_unused]] const ::CTXLogger::ContextMessageGuard LOG_CONCAT(__context_message_guard, __LINE__) = \
+  ::CTXLogger::ContextMessageGuardFactory(::CTXLogger::logger, ::CTXLogger::_severity_level <= ::CTXLogger::severity_level::lvl) <<= message
+
+
+#define LOG_EX(lvl, ex) \
+  for(bool live = ::CTXLogger::_severity_level <= ::CTXLogger::severity_level::lvl; live; live = false) \
+    LOG_FLUSH(), ::CTXLogger::logger.log_exception(ex)
+
+
+/*
+#if __cplusplus > 201703L
+#  define PP_NARG(...) PP_NARG_(_ __VA_OPT__(,)__VA_ARGS__, 1, 0)
+#else
+#  define PP_NARG(...) PP_NARG_(_, ##__VA_ARGS__, 1, 0)
+#endif
+
+#define PP_NARG_(_, ...) PP_ARG_N(__VA_ARGS__)
+#define PP_ARG_N(_1, N, ...) N
+#define PP_RSEQ_N() 1, 0
+
+#define CAT(a, ...) PRIMITIVE_CAT(a, __VA_ARGS__)
+#define PRIMITIVE_CAT(a, ...) a ## __VA_ARGS__
+
+#define IIF(c) PRIMITIVE_CAT(IIF_, c)
+#define IIF_0(t, ...) __VA_ARGS__
+#define IIF_1(t, ...) t
+
+#define _LOG_CTX_0_() ::CTXLogger::ContextMessageGuardFactory(::CTXLogger::logger) <<= ::CTXLogger::Message() << ::CTXLogger::configure_ansi_support
+#define _LOG_CTX_1_(lvl) ::CTXLogger::ContextMessageGuardFactory(::CTXLogger::logger, ::CTXLogger::_severity_level <= ::CTXLogger::severity_level::lvl) <<= ::CTXLogger::Message() << ::CTXLogger::configure_ansi_support
+
+#define LOG_CTX(...) \
+  [[maybe_unused]] const ::CTXLogger::ContextMessageGuard LOG_CONCAT(__context_message_guard, __LINE__) = \
+  IIF(PP_NARG(__VA_ARGS__))( \
+    _LOG_CTX_0_() , \
+    _LOG_CTX_1_(__VA_ARGS__) \
+  )
+*/
 
 #endif // LOGGER_HXX

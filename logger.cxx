@@ -2,6 +2,7 @@
 
 #include <unistd.h> // isatty(), fileno()
 
+#include <utils.hxx>
 
 namespace CTXLogger {
 
@@ -38,11 +39,6 @@ bool StreamSink::is_atty(const std::ostream& stream)
   return ::isatty(fileno(std_stream));
 }
 
-
-void Logger::operator|(const char* m) {
-  log(m);
-}
-
 void Logger::log(const std::string& m) {
   flush();
   sink->log(m);
@@ -53,8 +49,25 @@ void Logger::log(const char* m) {
   sink->log(m);
 }
 
+void Logger::operator|(const char* m) {
+  log(m);
+}
+
 void Logger::operator|(const std::string& m) {
   log(m);
+}
+
+void Logger::log_exception(const std::exception& ex, std::size_t depth)
+{
+  using namespace ansi;
+
+  log(Message() << configure_ansi_support << style::red_fg << "Error: " << style::reset << io::repeat(" ", depth) << ex.what());
+
+  try {
+    std::rethrow_if_nested(ex);
+  } catch (const std::exception& nested) {
+    log_exception(nested, depth + 1);
+  }
 }
 
 void Logger::pop_context() {
@@ -69,9 +82,25 @@ void Logger::flush() {
   context.clear();
 }
 
+ContextMessageGuard::ContextMessageGuard(Logger& logger, std::shared_ptr<ContextMessage> message) noexcept
+  : logger(logger)
+  , message(std::move(message))
+{}
+
 ContextMessageGuard::~ContextMessageGuard() noexcept {
+  if (std::uncaught_exceptions())
+    logger.flush();
   if (!message->isConsumed())
     logger.pop_context();
+}
+
+ContextMessageGuard ContextMessageGuardFactory::operator<<=(std::string message) {
+  ContextMessageGuard g = logger.make_guard(std::move(message));
+
+  if (flush_immediately)
+    logger.flush();
+
+  return g;
 }
 
 Logger logger;

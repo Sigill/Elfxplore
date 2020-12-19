@@ -23,7 +23,7 @@ void DB_Task::parse_args(const std::vector<std::string>& args)
   bpo::notify(vm);
 }
 
-int DB_Task::execute(Database3& db)
+void DB_Task::execute(Database3& db)
 {
   if (vm.count("clear-symbols")) {
     db.truncate_symbols();
@@ -36,6 +36,4 @@ int DB_Task::execute(Database3& db)
   if (vm.count("vacuum")) {
     db.vacuum();
   }
-
-  return TaskStatus::SUCCESS;
 }

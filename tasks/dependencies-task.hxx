@@ -13,7 +13,7 @@ public:
   using Task::Task;
   boost::program_options::options_description options() override;
   void parse_args(const std::vector<std::string>& args) override;
-  int execute(Database3& db) override;
+  void execute(Database3& db) override;
 };
 
 #endif // DEPENDENCIESCOMMAND_HXX

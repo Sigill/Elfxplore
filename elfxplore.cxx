@@ -10,14 +10,14 @@
 
 #include <SQLiteCpp/Transaction.h>
 
-#include <ansi.hxx>
+#include "ansi.hxx"
 #include "logger.hxx"
 #include "Database3.hxx"
 #include "command-utils.hxx"
 #include "database-utils.hxx"
 #include "utils.hxx"
 
-#include "tasks/command-task.hxx"
+#include "tasks/import-command-task.hxx"
 #include "tasks/db-task.hxx"
 #include "tasks/extract-task.hxx"
 #include "tasks/analyse-task.hxx"
@@ -34,6 +34,7 @@ namespace {
 using CommandFactory = std::function<std::unique_ptr<Task>()>;
 const std::vector<std::pair<std::string, CommandFactory>> commands = {
     {"db"                  , COMMAND_FACTORY(DB_Task)},
+    {"import-command"      , COMMAND_FACTORY(ImportCommand_Task)},
     {"extract"             , COMMAND_FACTORY(Extract_Task)},
     {"dependencies"        , COMMAND_FACTORY(Dependencies_Task)},
     {"artifacts"           , COMMAND_FACTORY(Artifacts_Task)},
@@ -48,61 +49,6 @@ std::unique_ptr<Task> get_task(const std::string& command_arg) {
     return nullptr;
   else
     return factory->second();
-}
-
-bool is_stdin(const std::string& s) { return s == "-"; }
-
-class InputFiles : public std::vector<std::string> {
-public:
-  using std::vector<std::string>::vector;
-
-  bool contain_stdin() const {
-    return std::any_of(cbegin(), cend(), is_stdin);
-  }
-};
-
-class invalid_option_file_not_found : public bpo::error_with_option_name {
-public:
-  explicit invalid_option_file_not_found(const std::string& bad_value)
-    : bpo::error_with_option_name("argument ('%value%') is an invalid path for option '%canonical_option%'")
-  {
-    set_substitute_default("value", "argument ('%value%')", "(empty string)");
-    set_substitute("value", bad_value);
-  }
-};
-
-class invalid_option_duplicated_value : public bpo::error_with_option_name {
-public:
-  explicit invalid_option_duplicated_value(const std::string& bad_value)
-    : bpo::error_with_option_name("argument ('%value%') is specified multiple times for option '%canonical_option%'")
-  {
-    set_substitute_default("value", "argument ('%value%')", "(empty string)");
-    set_substitute("value", bad_value);
-  }
-};
-
-void validate(boost::any& v,
-              const std::vector<std::string>& values,
-              InputFiles* /*target_type*/, int)
-{
-  // Make sure no previous assignment to 'v' was made.
-  bpo::validators::check_first_occurrence(v);
-
-  // Check unicity of values.
-  std::vector<std::string> value_cpy = values;
-  std::sort(value_cpy.begin(), value_cpy.end());
-  auto it = std::adjacent_find(value_cpy.begin(), value_cpy.end());
-  if (it != value_cpy.end())
-    throw invalid_option_duplicated_value(*it);
-
-  for(const std::string& value : values) {
-    if (is_stdin(value))
-      continue;
-    if (!std::filesystem::is_regular_file(value))
-      throw invalid_option_file_not_found(value);
-  }
-
-  v = boost::any(InputFiles(values.begin(), values.end()));
 }
 
 void usage(std::ostream& out,
@@ -163,8 +109,6 @@ int main(int argc, char** argv)
   bool help = false;
   bool dryrun = false;
   std::string storage;
-  InputFiles compile_commands;
-  InputFiles line_commands;
 
   bpo::options_description base_options {"Common options"};
   base_options.add_options()
@@ -177,14 +121,6 @@ int main(int argc, char** argv)
       ("dry-run,n",
        bpo::bool_switch(&dryrun),
        "Do not write anything to the database.")
-      ("compile-commands",
-       bpo::value<InputFiles>(&compile_commands)->multitoken()->value_name("files")->implicit_value({"-"}, "-"),
-       "List of the commands used to generate the project. "
-       "This file can also include link commands used to generate libraries & executables.")
-      ("commands",
-       bpo::value<InputFiles>(&line_commands)->multitoken()->value_name("files")->implicit_value({"-"}, "-"),
-       "List of the commands used to generate the project. "
-       "This file can also include link commands used to generate libraries & executables.")
       ("storage",
        bpo::value<std::string>(&storage)->value_name("file")->default_value(":memory:"),
        "SQLite database used as backend. If not specified, a temporary in-memory database is used.")
@@ -195,13 +131,8 @@ int main(int argc, char** argv)
     return -1;
   }
 
-  std::string task_name;
-  std::unique_ptr<Task> task;
-
-  std::vector<std::string> args = {&argv[1], &argv[argc]};
-
   try {
-    const bpo::parsed_options recognized_args = bpo::command_line_parser(args)
+    const bpo::parsed_options recognized_args = bpo::command_line_parser(argc, argv)
                                                 .style(bpo::command_line_style::default_style & ~bpo::command_line_style::allow_guessing)
                                                 .options(base_options)
                                                 .allow_unregistered()
@@ -210,56 +141,57 @@ int main(int argc, char** argv)
     bpo::store(recognized_args, vm);
     vm.notify();
 
-    if (line_commands.contain_stdin() && compile_commands.contain_stdin()) {
-      throw bpo::error("argument '-' (aka stdin) cannot be used multiple times");
-    }
+    std::vector<std::string> args = bpo::collect_unrecognized(recognized_args.options, bpo::include_positional);
 
-    args = bpo::collect_unrecognized(recognized_args.options, bpo::include_positional);
-
-    if (!args.empty()) {
-      task_name = args.front();
-      task = get_task(task_name);
-
-      if (!task) {
-        throw bpo::error("unknown task \"" + task_name + "\"");
+    if (args.empty()) {
+      if (help) {
+        usage(std::cout, argv[0], base_options);
+        return 0;
+      } else {
+        throw bpo::error("No command specified");
       }
     }
 
-    if (help) {
-      if (!task)
-        usage(std::cout, argv[0], base_options);
-      else
-        usage(std::cout, argv[0], task_name, base_options, task->options());
+    std::string task_name = args.front();
+    args.erase(args.begin());
+    std::unique_ptr<Task> task = get_task(task_name);
 
+    if (!task) {
+      throw bpo::error("Unknown command \"" + task_name + "\"");
+    }
+
+    if (help) {
+      usage(std::cout, argv[0], task_name, base_options, task->options());
       return 0;
     }
 
-    if (task)
-      task->parse_args(args);
+    task->parse_args(args);
 
     Database3 db(storage);
 
     SQLite::Transaction transaction(db.database());
     bool commit = !dryrun;
 
-    if (!line_commands.empty() || !compile_commands.empty())
-    {
-      db.load_commands(line_commands, compile_commands);
+    try {
+      task->execute(db);
+      commit &= true;
     }
-
-    if (task) {
-      const int status = task->execute(db);
-      commit &= (status == TaskStatus::SUCCESS);
-    }
+    catch (const std::exception& ex) { LOG_EX(fatal, ex); }
+    catch (...) { LOG(fatal) << "Unknown exception"; }
 
     if (dryrun) {
-      LOG(always) << "Dry-run, aborting transaction";
-    } else if (commit) {
-      transaction.commit();
-      db.optimize();
+      LOG(info) << "Dry-run, aborting transaction";
+    } else {
+      if (commit) {
+        transaction.commit();
+        db.optimize();
+      } else {
+        LOG(info) << "Aborting";
+      }
     }
-  } catch (const bpo::error& ex) {
-    LOG(error) << ex.what();
+  }
+  catch (const std::exception& ex) {
+    LOG_EX(fatal, ex);
     return -1;
   }
 }

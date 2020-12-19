@@ -69,6 +69,7 @@ add_executable(elfxplore
     Database3.cxx
     task.cxx
     tasks/db-task.cxx
+    tasks/import-command-task.cxx
     tasks/extract-task.cxx
     tasks/dependencies-task.cxx
     tasks/analyse-task.cxx

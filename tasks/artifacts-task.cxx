@@ -28,7 +28,7 @@ void Artifacts_Task::parse_args(const std::vector<std::string>& args)
   bpo::notify(vm);
 }
 
-int Artifacts_Task::execute(Database3& db)
+void Artifacts_Task::execute(Database3& db)
 {
   const std::vector<std::string> included_types = vm["type"].as<std::vector<std::string>>(),
                                  excluded_types = vm["not-type"].as<std::vector<std::string>>();
@@ -57,6 +57,4 @@ int Artifacts_Task::execute(Database3& db)
   }
 
   std::flush(std::cout);
-
-  return 0;
 }
