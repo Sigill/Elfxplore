@@ -118,6 +118,8 @@ boost::program_options::options_description ImportCommand_Task::options()
       ("list", bpo::value<InputFiles>()->multitoken()->value_name("file")->implicit_value({"-"}, "-")->default_value({}, ""),
        "Specify that input files are in text format (one command per line).\n"
        "Use - to read from the standard input (default).")
+      ("extract-dependencies", "Extract dependencies from the stored commands.")
+      ("extract-symbols", "Extract symbols from artifacts.")
       ;
 
   return opt;
@@ -169,4 +171,12 @@ void ImportCommand_Task::execute(Database3& db)
   }
 
   db.set_timestamp("import-commands", std::chrono::high_resolution_clock::now());
+
+  if (vm.count("extract-dependencies")) {
+    db.load_dependencies();
+  }
+
+  if (vm.count("extract-symbols")) {
+    db.load_symbols();
+  }
 }

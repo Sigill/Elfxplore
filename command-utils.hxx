@@ -25,8 +25,6 @@ public:
   long long artifact_id = -1;
   std::string output;
   std::string output_type;
-
-  bool is_complete() const;
 };
 
 namespace parse_command_options {

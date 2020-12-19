@@ -92,11 +92,6 @@ void parse_command(const std::string& line, CompilationCommand& command, const i
   }
 }
 
-bool CompilationCommand::is_complete() const
-{
-  return !directory.empty() || !executable.empty() || !args.empty() || !output.empty() || !output_type.empty();
-}
-
 namespace {
 
 const std::vector<std::string> ignored_single_args = {"-D", "-w", "-W", "-O", "-m", "-g", "-f", "-MD", "-c",

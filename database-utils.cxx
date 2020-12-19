@@ -131,9 +131,10 @@ void DependenciesExtractor::run(Database2& db)
 
   const std::vector<fs::path> default_library_directories = load_default_library_directories();
 
-  auto cq = db.statement("select count(*) from commands");
-  if (notifyTotalSteps)
+  if (notifyTotalSteps) {
+    auto cq = db.statement("select count(*) from commands");
     notifyTotalSteps(db.get_id(cq));
+  }
 
   auto stm = db.statement(R"(
 select commands.id, commands.directory, commands.executable, commands.args, artifacts.id, artifacts.name, artifacts.type
