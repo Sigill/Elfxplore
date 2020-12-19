@@ -161,7 +161,7 @@ std::map<std::string, long long> Database2::count_artifacts_by_type()
 {
   std::map<std::string, long long> stats;
 
-  auto stm = statement("select type, count(*)from artifacts group by type");
+  auto stm = statement("select type, count(*) from artifacts group by type");
 
   while(stm.executeStep()) {
     stats.emplace(stm.getColumn(0).getString(), stm.getColumn(1).getInt64());

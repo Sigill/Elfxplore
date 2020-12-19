@@ -73,15 +73,6 @@ Database3::Database3(const std::string& storage)
   : Database2(storage)
 {}
 
-void Database3::import_command(const CompilationCommand& cmd)
-{
-  const long long command_id = create_command(cmd.directory, cmd.executable, cmd.args);
-
-  if (-1 == artifact_id_by_name(cmd.output)) {
-    create_artifact(cmd.output, cmd.output_type, command_id);
-  }
-}
-
 void Database3::load_dependencies()
 {
   const long long date_import_commands = get_timestamp("import-commands");

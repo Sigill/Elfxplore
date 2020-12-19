@@ -9,6 +9,7 @@
 #include <instrmt/instrmt.hxx>
 
 #include "utils.hxx"
+#include "Database2.hxx"
 
 namespace fs = std::filesystem;
 namespace pt = boost::property_tree;
@@ -349,4 +350,34 @@ void parse_compile_commands(std::istream& in, const std::function<void (size_t, 
     notify(item, line, cmd);
     ++item;
   }
+}
+
+void CommandImporter::import_commands(std::istream& in)
+{
+  parse_commands(in, [this](auto ...args){ on_command(args...); });
+}
+
+void CommandImporter::import_compile_commands(std::istream& in)
+{
+  parse_compile_commands(in, [this](auto ...args){ on_command(args...); });
+}
+
+void CommandImporter::on_command(size_t /*item*/, const std::string& /*line*/, const CompilationCommand& command)
+{
+  if (command.directory.empty())
+    throw std::runtime_error("Invalid command: directory could not be identified");
+
+  if (command.executable.empty())
+    throw std::runtime_error("Invalid command: executable could not be identified");
+
+  if (command.output.empty())
+    throw std::runtime_error("Invalid commant: output could not be identified");
+
+  const long long command_id = db.create_command(command.directory, command.executable, command.args);
+
+  if (-1 == db.artifact_id_by_name(command.output)) {
+    db.create_artifact(command.output, command.output_type, command_id);
+  }
+
+  ++count;
 }

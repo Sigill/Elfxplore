@@ -1,11 +1,14 @@
 #ifndef COMMANDUTILS_HXX
 #define COMMANDUTILS_HXX
 
+#include <filesystem>
 #include <functional>
+#include <iosfwd>
+#include <set>
 #include <string>
 #include <vector>
-#include <set>
-#include <filesystem>
+
+class Database2;
 
 bool is_cc(const std::string& command);
 
@@ -38,6 +41,27 @@ void parse_commands(std::istream& in,
 
 void parse_compile_commands(std::istream& in,
                             const std::function<void(size_t, const std::string&, const CompilationCommand&)>& notify);
+
+class CommandImporter
+{
+private:
+  Database2& db;
+  size_t count = 0UL;
+
+public:
+  CommandImporter(Database2& db)
+   : db(db)
+  {}
+
+  void import_commands(std::istream& in);
+  void import_compile_commands(std::istream& in);
+
+  void reset_count() { count = 0; }
+  size_t count_inserted() const { return count; }
+
+protected:
+  virtual void on_command(size_t item, const std::string& line, const CompilationCommand& command);
+};
 
 class Dependencies {
 public:

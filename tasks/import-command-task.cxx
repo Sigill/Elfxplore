@@ -5,7 +5,7 @@
 #include <utility>
 #include <filesystem>
 
-#include <ansi.hxx>
+#include "ansi.hxx"
 
 #include <SQLiteCpp/Transaction.h>
 
@@ -89,6 +89,23 @@ std::ostream& operator<<(std::ostream& os, const pretty_input_name& input) {
   return os;
 }
 
+class ConsoleCommandImporter : public CommandImporter
+{
+public:
+  using CommandImporter::CommandImporter;
+
+protected:
+  void on_command(size_t item, const std::string& line, const CompilationCommand& command) override
+  {
+    LOG_CTX() << style::green_fg << "Command #" << item << ": " << style::reset << line;
+
+    CommandImporter::on_command(item, line, command);
+
+    LOG(debug) << style::blue_fg << "Directory: " << style::reset << command.directory;
+    LOG(debug) << style::blue_fg << "Output:    " << style::reset << command.output << " (" << command.output_type << ")";
+  }
+};
+
 } // anonymous namespace
 
 boost::program_options::options_description ImportCommand_Task::options()
@@ -119,54 +136,36 @@ void ImportCommand_Task::parse_args(const std::vector<std::string>& args)
 
 void ImportCommand_Task::execute(Database3& db)
 {
-  size_t count = 0UL;
-  auto on_command = [&count, &db](size_t item, const std::string& line, const CompilationCommand& command) {
-    LOG_CTX() << style::green_fg << "Command #" << item << ": " << style::reset << line;
-
-    if (command.directory.empty())
-      throw std::runtime_error("Invalid command: directory could not be identified");
-
-    if (command.executable.empty())
-      throw std::runtime_error("Invalid command: executable could not be identified");
-
-    if (command.output.empty())
-      throw std::runtime_error("Invalid commant: output could not be identified");
-
-    db.import_command(command);
-    ++count;
-
-    LOG(debug) << style::blue_fg << "Directory: " << style::reset << command.directory;
-    LOG(debug) << style::blue_fg << "Output:    " << style::reset << command.output << " (" << command.output_type << ")";
-  };
+  ConsoleCommandImporter importer(db);
 
   for(const auto& src : vm["json"].as<InputFiles>()) {
     LOG_CTX_FLUSH(info) << "Importing json compilation database from " << pretty_input_name(src);
 
-    count = 0UL;
+    importer.reset_count();
 
     if (src == "-") {
-      parse_compile_commands(std::cin, on_command);
+      importer.import_compile_commands(std::cin);
     } else {
       std::ifstream in(src);
-      parse_compile_commands(in, on_command);
+      importer.import_compile_commands(in);
     }
 
-    LOG(info) << count << " commands imported";
+    LOG(info) << importer.count_inserted() << " commands imported";
   }
 
   for(const auto& src : vm["list"].as<InputFiles>()) {
     LOG_CTX_FLUSH(info) << "Importing list of commands from " << pretty_input_name(src);
 
-    count = 0UL;
+    importer.reset_count();
 
     if (src == "-") {
-      parse_commands(std::cin, on_command);
+      importer.import_commands(std::cin);
     } else {
       std::ifstream in(src);
-      parse_commands(in, on_command);
+      importer.import_commands(in);
     }
 
-    LOG(info) << count << " commands imported";
+    LOG(info) << importer.count_inserted() << " commands imported";
   }
 
   db.set_timestamp("import-commands", std::chrono::high_resolution_clock::now());
