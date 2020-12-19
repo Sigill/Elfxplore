@@ -45,52 +45,7 @@ endfunction()
 
 set(FILESYSTEM_LIBRARY "stdc++fs")
 
-add_library(elfxplore-core STATIC
-    logger.cxx
-    SymbolReference.cxx
-    SymbolReferenceSet.cxx
-    nm.cxx
-    Database2.cxx
-    utils.cxx
-    query-utils.cxx
-    command-utils.cxx
-    database-utils.cxx
-    ansi.cxx
-)
-add_dependencies(elfxplore-core jhasse_ThreadPool)
-target_include_directories(elfxplore-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(elfxplore-core
-    PUBLIC SQLiteCpp Boost::system Boost::program_options ${FILESYSTEM_LIBRARY}
-    PRIVATE SQLite::SQLite3 Threads::Threads OpenMP::OpenMP_CXX shellwords jhasse_ThreadPool)
-target_link_instrmt(elfxplore-core)
-
-add_executable(elfxplore
-    progressbar.cxx
-    Database3.cxx
-    task.cxx
-    tasks/db-task.cxx
-    tasks/import-command-task.cxx
-    tasks/extract-task.cxx
-    tasks/dependencies-task.cxx
-    tasks/analyse-task.cxx
-    tasks/artifacts-task.cxx
-    elfxplore.cxx)
-target_include_directories(elfxplore PRIVATE ${jhasse_ThreadPool_DIR})
-target_link_libraries(elfxplore
-    PRIVATE elfxplore-core Boost::system Boost::program_options
-            Threads::Threads SQLiteCpp OpenMP::OpenMP_CXX shellwords linemarkers)
-
 include(CTest)
 
-if(BUILD_TESTING)
-    find_package(GTest REQUIRED NO_MODULE)
-    enable_testing()
-
-    add_executable(unit-tests tests/unit-tests.cxx)
-    target_link_libraries(unit-tests
-        PRIVATE elfxplore-core
-        shellwords
-        GTest::gmock_main
-        Boost::program_options)
-    add_test(unit-tests unit-tests)
-endif()
+add_subdirectory(core)
+add_subdirectory(cli)

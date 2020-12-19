@@ -23,7 +23,6 @@
 #include "logger.hxx"
 #include "progressbar.hxx"
 #include "csvprinter.h"
-#include "infix_iterator.hxx"
 #include "process-utils.hxx"
 #include "utils.hxx"
 
