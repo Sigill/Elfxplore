@@ -71,6 +71,11 @@ void usage(std::ostream& out,
   out << task_options;
 }
 
+const char* envvar(const char* name, const char* def = nullptr) {
+  const char* v = std::getenv(name);
+  return v ? v : def;
+}
+
 } // anonymous namespace
 
 namespace CTXLogger {
@@ -122,7 +127,7 @@ int main(int argc, char** argv)
        bpo::bool_switch(&dryrun),
        "Do not write anything to the database.")
       ("storage",
-       bpo::value<std::string>(&storage)->value_name("file")->default_value(":memory:"),
+       bpo::value<std::string>(&storage)->value_name("file")->default_value(envvar("ELFXPLORE_STORAGE", ":memory:")),
        "SQLite database used as backend. If not specified, a temporary in-memory database is used.")
       ;
 
@@ -139,6 +144,7 @@ int main(int argc, char** argv)
                                                 .run();
     bpo::variables_map vm;
     bpo::store(recognized_args, vm);
+
     vm.notify();
 
     std::vector<std::string> args = bpo::collect_unrecognized(recognized_args.options, bpo::include_positional);
